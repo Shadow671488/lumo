@@ -16,7 +16,7 @@
     "release:major": "npm version major && git push --follow-tags"
   },
   "keywords": [],
-  "author": "rootscripts",
+  "author": "Oxeez",
   "license": "MIT",
   "description": "Lumo - audio player made for humans.",
   "devDependencies": {
@@ -32,13 +32,13 @@
     "tone": "^15.1.22"
   },
   "productName": "Lumo",
-  "homepage": "https://github.com/rootscripts/riff",
+  "homepage": "https://github.com/Shadow671488/lumo",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/rootscripts/riff.git"
+    "url": "git+https://github.com/Shadow671488/lumo.git"
   },
   "bugs": {
-    "url": "https://github.com/rootscripts/riff/issues"
+    "url": "https://github.com/Shadow671488/lumo/issues"
   },
   "build": {
     "appId": "com.lumo.player",
@@ -52,12 +52,13 @@
       "src/**/*",
       "assets/**/*",
       "vendor/**/*",
-      "package.json"
+      "package.json",
+      "!src/storage.json"
     ],
     "win": {
       "target": [
         {
-          "target": "portable",
+          "target": "nsis",
           "arch": [
             "x64"
           ]
@@ -65,11 +66,9 @@
       ],
       "icon": "assets/01-default.ico"
     },
-    "portable": {
-      "artifactName": "${productName}-${version}-win-${arch}-portable.${ext}"
-    },
     "nsis": {
-      "oneClick": true,
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
       "perMachine": false,
       "deleteAppDataOnUninstall": false
     },
@@ -111,8 +110,8 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "rootscripts",
-        "repo": "riff",
+        "owner": "Shadow671488",
+        "repo": "lumo",
         "releaseType": "release"
       }
     ]

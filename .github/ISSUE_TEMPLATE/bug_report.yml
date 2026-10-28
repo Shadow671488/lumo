@@ -72,5 +72,5 @@ body:
     id: logs
     attributes:
       label: Console Logs
-      description: Paste  logs copied from settings > about or riff.log in logs folder
+      description: Paste  logs copied from settings > about or lumo.log in logs folder
       render: text

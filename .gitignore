@@ -12,3 +12,9 @@ bin/ffprobe.exe
 dev-app-update.yml
 plugins/lastfm-scrobbler.js
 test/lastfm-scrobbler.test.js
+
+# Unused root-level duplicates (real files live under src/renderer/)
+/app.js
+/server.js
+/lyrics-rtl.js
+/track-sort.js

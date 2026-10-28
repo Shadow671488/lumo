@@ -4,8 +4,8 @@ const os = require('os');
 const path = require('path');
 const { execFile } = require('child_process');
 
-const NAME = 'Riff';
-const COMMENT = 'Riff - music player';
+const NAME = 'Lumo';
+const COMMENT = 'Lumo - music player';
 const APP_ID = '';
 
 function winShortcutPath() {
@@ -13,11 +13,11 @@ function winShortcutPath() {
 }
 
 function linuxDesktopPath() {
-  return path.join(os.homedir(), '.local', 'share', 'applications', 'riff.desktop');
+  return path.join(os.homedir(), '.local', 'share', 'applications', 'lumo.desktop');
 }
 
 function linuxIconPath() {
-  return path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', '512x512', 'apps', 'riff.png');
+  return path.join(os.homedir(), '.local', 'share', 'icons', 'hicolor', '512x512', 'apps', 'lumo.png');
 }
 
 function getLauncherInfo() {
@@ -26,7 +26,7 @@ function getLauncherInfo() {
     return { platform: 'win32', canInstall: true, installed: fs.existsSync(winShortcutPath()), reason: '' };
   }
   if (process.platform === 'linux') {
-    if (!process.env.APPIMAGE) return { platform: 'linux', canInstall: false, installed: false, reason: 'Available when Riff runs as an AppImage' };
+    if (!process.env.APPIMAGE) return { platform: 'linux', canInstall: false, installed: false, reason: 'Available when Lumo runs as an AppImage' };
     return { platform: 'linux', canInstall: true, installed: fs.existsSync(linuxDesktopPath()), reason: '' };
   }
   return { platform: process.platform, canInstall: false, installed: false, reason: 'Not supported on this system' };
@@ -55,7 +55,7 @@ function installLinux() {
   let icon = 'audio-x-generic';
   try {
     fs.mkdirSync(path.dirname(iconDest), { recursive: true });
-    fs.writeFileSync(iconDest, fs.readFileSync(path.join(__dirname, '../../assets', 'icon.png')));
+    fs.writeFileSync(iconDest, fs.readFileSync(path.join(__dirname, '../../assets', '01-default.png')));
     icon = iconDest;
   } catch (e) {}
   const lines = [
@@ -91,3 +91,5 @@ function installLauncher() {
 }
 
 module.exports = { getLauncherInfo, installLauncher };
+
+

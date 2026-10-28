@@ -31,7 +31,12 @@ function initUpdater(getWindow) {
   if (pkg.version) {
     app.setVersion(pkg.version);
   }
-  const releasesUrl = `${pkg.homepage || 'https://github.com/rootscripts/riff'}/releases`;
+  // Only check a release repo that belongs to this build. Unset by default, so
+  // a fork does not offer the original Riff releases (e.g. "43.2.1 available")
+  // or risk replacing itself with someone else's build.
+  const updateRepo = (process.env.LUMO_UPDATE_REPO || '').trim();
+  const updaterEnabled = !!updateRepo;
+  const releasesUrl = updateRepo ? `https://github.com/${updateRepo}` : '';
   let manualCheck = false;
   let installNow = false;
   let current = null;
@@ -49,9 +54,14 @@ function initUpdater(getWindow) {
   };
 
   const fallbackFetchGitHub = async () => {
+    if (!updaterEnabled) {
+      if (manualCheck) send('update-not-available', { version: pkg.version || app.getVersion() });
+      manualCheck = false;
+      return;
+    }
     try {
-      const res = await fetch('https://api.github.com/repos/rootscripts/riff/releases/latest', {
-        headers: { 'User-Agent': 'Riff-Player' }
+      const res = await fetch(`https://api.github.com/repos/${updateRepo}/releases/latest`, {
+        headers: { 'User-Agent': 'Lumo-Player' }
       });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const json = await res.json();
@@ -85,7 +95,7 @@ function initUpdater(getWindow) {
 
   let autoUpdater = null;
   const hasUpdaterSupport = !isDev || fs.existsSync(devConfigFile);
-  if (hasUpdaterSupport && canInstall) {
+  if (updaterEnabled && hasUpdaterSupport && canInstall) {
     try {
       const eu = require('electron-updater');
       autoUpdater = eu.autoUpdater;
@@ -160,8 +170,10 @@ function initUpdater(getWindow) {
     }
   });
 
-  setTimeout(check, CHECK_DELAY_MS);
-  setInterval(check, CHECK_EVERY_MS).unref();
+  if (updaterEnabled) {
+    setTimeout(check, CHECK_DELAY_MS);
+    setInterval(check, CHECK_EVERY_MS).unref();
+  }
 }
 
 module.exports = { initUpdater };

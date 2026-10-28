@@ -1,12 +1,14 @@
 {
-  "name": "riff",
+  "name": "lumo",
   "version": "43.0.0",
   "main": "src/main/main.js",
   "bin": {
-    "riff": "src/main/cli.js"
+    "lumo": "src/main/cli.js"
   },
   "scripts": {
-    "start": "electron .",
+    "start": "node scripts/start-lumo.js",
+    "brand": "node scripts/brand-electron.js",
+    "postinstall": "node scripts/brand-electron.js",
     "test": "node --test",
     "dist": "electron-builder",
     "release": "npm version patch && git push --follow-tags",
@@ -16,19 +18,20 @@
   "keywords": [],
   "author": "rootscripts",
   "license": "MIT",
-  "description": "made for humans, Riff - audio player.",
+  "description": "Lumo - audio player made for humans.",
   "devDependencies": {
     "electron": "^41.7.1",
     "electron-builder": "^26.15.3"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.118.0",
     "cfonts": "^3.3.1",
     "discord-rpc": "^4.0.1",
     "electron-updater": "^6.8.9",
     "hls.js": "^1.7.1",
     "tone": "^15.1.22"
   },
-  "productName": "Riff",
+  "productName": "Lumo",
   "homepage": "https://github.com/rootscripts/riff",
   "repository": {
     "type": "git",
@@ -38,9 +41,10 @@
     "url": "https://github.com/rootscripts/riff/issues"
   },
   "build": {
-    "appId": "io.github.rootscripts.riff",
-    "productName": "Riff",
-    "artifactName": "${name}-${version}-${os}-${arch}.${ext}",
+    "appId": "com.lumo.player",
+    "productName": "Lumo",
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "npmRebuild": false,
     "directories": {
       "output": "dist"
     },
@@ -53,13 +57,16 @@
     "win": {
       "target": [
         {
-          "target": "nsis",
+          "target": "portable",
           "arch": [
             "x64"
           ]
         }
       ],
-      "icon": "assets/icon.png"
+      "icon": "assets/01-default.ico"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-win-${arch}-portable.${ext}"
     },
     "nsis": {
       "oneClick": true,
@@ -75,7 +82,7 @@
           ]
         }
       ],
-      "icon": "assets/icon.png",
+      "icon": "assets/01-default.png",
       "category": "AudioVideo"
     },
     "mac": {

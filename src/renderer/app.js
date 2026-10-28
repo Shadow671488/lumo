@@ -1,3 +1,28 @@
+(() => {
+  try {
+    if (typeof window === 'undefined' || window.__riffFetchPatched) return;
+    const api = window.electronAPI;
+    const token = api && api.serverToken;
+    if (!token) return;
+    const origFetch = window.fetch ? window.fetch.bind(window) : null;
+    if (!origFetch) return;
+    window.__riffFetchPatched = true;
+    window.fetch = function (input, init) {
+      try {
+        const raw = typeof input === 'string' ? input : (input && input.url) || '';
+        if (raw.indexOf('/api/') !== -1) {
+          const opts = Object.assign({}, init || {});
+          const headers = new Headers(opts.headers || (input && input.headers) || undefined);
+          headers.set('X-Lumo-Token', token);
+          opts.headers = headers;
+          return origFetch(input, opts);
+        }
+      } catch (e) {}
+      return origFetch(input, init);
+    };
+  } catch (e) {}
+})();
+
 (function initRiffDiskStorageDaemon() {
 if (!window.electronAPI || typeof window.electronAPI.storageInitSync !== 'function') return;
 const origGet = Storage.prototype.getItem;
@@ -5,6 +30,7 @@ const origSet = Storage.prototype.setItem;
 const origRemove = Storage.prototype.removeItem;
 const origClear = Storage.prototype.clear;
 const origKey = Storage.prototype.key;
+const canonicalStorageKey = (key) => String(key).replace(/^(?:riff|devsize)_/, 'lumo_');
 
 let diskMap = window.electronAPI.storageInitSync();
 let migrated = false;
@@ -33,11 +59,20 @@ migrated = true;
 }
 
 try { origClear.call(window.localStorage); } catch (_) {}
+window.__LUMO_STORAGE_MAP__ = diskMap;
 window.__RIFF_STORAGE_MAP__ = diskMap;
 
-if (migrated) {
-window.electronAPI.storageSaveSync(diskMap);
+// Promote legacy brand-prefixed settings without losing existing values.
+for (const oldPrefix of ['riff_', 'devsize_']) {
+  for (const key of Object.keys(diskMap)) {
+    if (!key.startsWith(oldPrefix)) continue;
+    const newKey = 'lumo_' + key.slice(oldPrefix.length);
+    if (!Object.prototype.hasOwnProperty.call(diskMap, newKey)) diskMap[newKey] = diskMap[key];
+    delete diskMap[key];
+    migrated = true;
+  }
 }
+if (migrated) window.electronAPI.storageSaveSync(diskMap);
 
 function flushAsync() {
 window.electronAPI.storageSaveBatch(diskMap);
@@ -45,7 +80,7 @@ window.electronAPI.storageSaveBatch(diskMap);
 
 Storage.prototype.getItem = function(key) {
 if (this === window.localStorage) {
-const k = String(key);
+const k = canonicalStorageKey(key);
 return Object.prototype.hasOwnProperty.call(diskMap, k) ? diskMap[k] : null;
 }
 return origGet.call(this, key);
@@ -53,7 +88,7 @@ return origGet.call(this, key);
 
 Storage.prototype.setItem = function(key, val) {
 if (this === window.localStorage) {
-const k = String(key);
+const k = canonicalStorageKey(key);
 const v = String(val);
 if (diskMap[k] === v) return;
 diskMap[k] = v;
@@ -65,7 +100,7 @@ origSet.call(this, key, val);
 
 Storage.prototype.removeItem = function(key) {
 if (this === window.localStorage) {
-const k = String(key);
+const k = canonicalStorageKey(key);
 if (Object.prototype.hasOwnProperty.call(diskMap, k)) {
 delete diskMap[k];
 flushAsync();
@@ -78,6 +113,7 @@ origRemove.call(this, key);
 Storage.prototype.clear = function() {
 if (this === window.localStorage) {
 diskMap = {};
+window.__LUMO_STORAGE_MAP__ = diskMap;
 window.__RIFF_STORAGE_MAP__ = diskMap;
 flushAsync();
 return;
@@ -109,31 +145,6 @@ try { window.electronAPI.storageSaveSync(diskMap); } catch (_) {}
 })();
 
 (() => {
-  try {
-    if (typeof window === 'undefined' || window.__riffFetchPatched) return;
-    const api = window.electronAPI;
-    const token = api && api.serverToken;
-    if (!token) return;
-    const origFetch = window.fetch ? window.fetch.bind(window) : null;
-    if (!origFetch) return;
-    window.__riffFetchPatched = true;
-    window.fetch = function (input, init) {
-      try {
-        const raw = typeof input === 'string' ? input : (input && input.url) || '';
-        if (raw.indexOf('/api/') !== -1) {
-          const opts = Object.assign({}, init || {});
-          const headers = new Headers(opts.headers || (input && input.headers) || undefined);
-          headers.set('X-Riff-Token', token);
-          opts.headers = headers;
-          return origFetch(input, opts);
-        }
-      } catch (e) {}
-      return origFetch(input, init);
-    };
-  } catch (e) {}
-})();
-
-(() => {
   let lastErrLogReset = Date.now();
   let errLogCount = 0;
   function reportError(level, message, stack) {
@@ -150,6 +161,7 @@ try { window.electronAPI.storageSaveSync(diskMap); } catch (_) {}
   }
   window.__riffLogError = reportError;
   window.addEventListener('error', (e) => {
+    if (/ResizeObserver loop completed with undelivered notifications/i.test(String(e.message || ''))) { e.preventDefault(); return; }
     reportError('ERROR', e.message || String(e), e.error ? e.error.stack : null);
   });
   window.addEventListener('unhandledrejection', (e) => {
@@ -171,7 +183,7 @@ try { window.electronAPI.storageSaveSync(diskMap); } catch (_) {}
   };
   const safety = setTimeout(finish, 1850);
   try {
-    const res = await fetch('../../assets/riff.svg');
+    const res = await fetch('../../assets/lumo.svg');
     const svgText = await res.text();
     host.innerHTML = svgText;
     const svg = host.querySelector('svg');
@@ -213,7 +225,7 @@ try { window.electronAPI.storageSaveSync(diskMap); } catch (_) {}
 })();
 
 document.addEventListener('DOMContentLoaded', async () => {
-  try { localStorage.removeItem('riff_stats'); } catch (e) {}
+  try { localStorage.removeItem('lumo_stats'); } catch (e) {}
   var lyricsScrollRaf = 0;
   var gradientRaf = 0;
   var cacheRafId = 0;
@@ -321,7 +333,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function t(str) {
     if (!str || typeof str !== 'string') return str;
-    const lang = localStorage.getItem('riff_ui_lang') || 'en';
+    const lang = localStorage.getItem('lumo_ui_lang') || 'en';
     if (lang === 'en') return str;
     const dict = i18nSessionMap.get(lang);
     if (dict && dict.has(str)) return dict.get(str);
@@ -344,6 +356,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   const toastQueue = [];
   const MAX_QUEUED_TOASTS = 10;
   let isToastActive = false;
+  let activeToastEl = null;
+  let activeToastDismiss = null;
 
   function showToast(message, type = 'info', duration = null) {
     if (!message) return;
@@ -355,6 +369,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!isToastActive) {
       processToastQueue();
     }
+  }
+
+  // Replaces whatever toast is on screen right now and drops the queue. Used
+  // for rapid toggles (repost / un-repost) so notifications never pile up.
+  function showToastNow(message, type = 'info', duration = null) {
+    if (!message) return;
+    toastQueue.length = 0;
+    const currentEl = activeToastEl;
+    if (activeToastDismiss) {
+      try { activeToastDismiss(true); } catch (e) {}
+    }
+    if (currentEl && currentEl.isConnected) currentEl.remove();
+    activeToastEl = null;
+    activeToastDismiss = null;
+    isToastActive = false;
+    showToast(message, type, duration);
   }
 
   function processToastQueue() {
@@ -398,22 +428,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     let timer = null;
     let remaining = duration || 3500;
     let startTimestamp = Date.now();
+    let done = false;
 
-    const dismiss = () => {
+    const finish = () => {
+      if (done) return;
+      done = true;
+      toast.remove();
+      if (activeToastEl !== toast) return;
+      activeToastEl = null;
+      activeToastDismiss = null;
+      processToastQueue();
+    };
+
+    const dismiss = (instant = false) => {
       if (dismissed) return;
       dismissed = true;
       if (timer) clearTimeout(timer);
+      if (instant) {
+        finish();
+        return;
+      }
       toast.classList.add('leaving');
-      let done = false;
-      const finish = () => {
-        if (done) return;
-        done = true;
-        toast.remove();
-        processToastQueue();
-      };
       toast.addEventListener('animationend', finish, { once: true });
       setTimeout(finish, 320);
     };
+
+    activeToastEl = toast;
+    activeToastDismiss = dismiss;
 
     const startTimer = (dur) => {
       startTimestamp = Date.now();
@@ -432,22 +473,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     });
 
-    toast.addEventListener('click', dismiss);
+    toast.addEventListener('click', () => dismiss());
 
     startTimer(remaining);
   }
 
-  if (localStorage.getItem('riff_scale_rebased_v2') !== '1') {
-    localStorage.setItem('riff_scale_rebased_v2', '1');
-    if (localStorage.getItem('devsize_ui_scale') === '90') {
-      localStorage.removeItem('devsize_ui_scale');
+  if (localStorage.getItem('lumo_scale_rebased_v2') !== '1') {
+    localStorage.setItem('lumo_scale_rebased_v2', '1');
+    if (localStorage.getItem('lumo_ui_scale') === '90') {
+      localStorage.removeItem('lumo_ui_scale');
     }
-    if (localStorage.getItem('riff_font_scale') === '95') {
-      localStorage.removeItem('riff_font_scale');
+    if (localStorage.getItem('lumo_font_scale') === '95') {
+      localStorage.removeItem('lumo_font_scale');
     }
   }
 
-  const savedScale = parseFloat(localStorage.getItem('devsize_ui_scale') || '100');
+  const savedScale = parseFloat(localStorage.getItem('lumo_ui_scale') || '100');
   applyScale(savedScale);
 
   function applyScale(scalePercent) {
@@ -559,26 +600,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     return Array.isArray(value) ? value : [];
   }
 
-  const rawCustomPresets = safeArray('devsize_custom_presets');
+  const rawCustomPresets = safeArray('lumo_custom_presets');
   const normalizedCustomPresets = rawCustomPresets.map(normalizePreset).filter(Boolean);
 
-  const savedVolumeRaw = parseFloat(localStorage.getItem('riff_volume'));
+  const savedVolumeRaw = parseFloat(localStorage.getItem('lumo_volume'));
   const savedVolume = Number.isFinite(savedVolumeRaw) ? Math.max(0, Math.min(1, savedVolumeRaw)) : 0.85;
 
   const DEFAULT_AUDIO_SETTINGS = { speed: 1.0, speedPitch: 1.0, pitch: 0, reverb: 0, distortion: 0, volume: 1.0, echo: 0, eq: { low: 0, mid: 0, high: 0 }, eqBands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] };
   const DEFAULT_HQ_SETTINGS = { engine: 'hqmusic-3', preset: 'studio', vocal: 0, air: 0, bass: 0 };
-  let soundPersistenceEnabled = localStorage.getItem('riff_persist_sound_settings') === '1';
+  let soundPersistenceEnabled = true;
 
   function loadSoundSettings() {
-    if (!soundPersistenceEnabled) {
-      return {
-        audioSettings: { ...DEFAULT_AUDIO_SETTINGS, eq: { ...DEFAULT_AUDIO_SETTINGS.eq }, eqBands: [...DEFAULT_AUDIO_SETTINGS.eqBands] },
-        hqEnabled: false,
-        hqSettings: { ...DEFAULT_HQ_SETTINGS }
-      };
-    }
-    const savedAudio = safeJson('riff_audio_settings', null);
-    const savedHq = safeJson('riff_hq_settings', null);
+    const savedAudio = safeJson('lumo_audio_settings', null);
+    const savedHq = safeJson('lumo_hq_settings', null);
     const audioObj = savedAudio && typeof savedAudio === 'object' ? savedAudio : {};
     const hqObj = savedHq && typeof savedHq === 'object' ? savedHq : {};
     return {
@@ -588,7 +622,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         eq: { ...DEFAULT_AUDIO_SETTINGS.eq, ...(audioObj.eq && typeof audioObj.eq === 'object' ? audioObj.eq : {}) },
         eqBands: Array.isArray(audioObj.eqBands) && audioObj.eqBands.length === 10 ? audioObj.eqBands.map(v => typeof v === 'number' ? v : 0) : [...DEFAULT_AUDIO_SETTINGS.eqBands]
       },
-      hqEnabled: localStorage.getItem('riff_hq_enabled') === '1',
+      hqEnabled: localStorage.getItem('lumo_hq_enabled') === '1',
       hqSettings: { ...DEFAULT_HQ_SETTINGS, ...hqObj }
     };
   }
@@ -608,11 +642,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function applyFont(font) {
-    const f = (typeof font === 'string' && font) ? font : (localStorage.getItem('riff_font') || 'google');
+    const f = (typeof font === 'string' && font) ? font : (localStorage.getItem('lumo_font') || 'google');
     if (typeof state !== 'undefined' && state) {
       state.riffFont = f;
     }
-    if (f === 'sf') {
+    if (f === 'custom') {
+      const customFontData = localStorage.getItem('lumo_custom_font_data');
+      if (customFontData) {
+        let styleTag = document.getElementById('riff-custom-font-style');
+        if (!styleTag) {
+          styleTag = document.createElement('style');
+          styleTag.id = 'riff-custom-font-style';
+          document.head.appendChild(styleTag);
+        }
+        styleTag.textContent = `@font-face { font-family: 'RiffCustomFont'; src: url('${customFontData}'); font-display: swap; }`;
+        document.documentElement.style.setProperty('--font-family', "'RiffCustomFont', sans-serif");
+      } else {
+        document.documentElement.style.removeProperty('--font-family');
+      }
+    } else if (f === 'sf') {
       ensureSfFontLoaded();
       document.documentElement.style.setProperty('--font-family', SF_FONT_STACK);
     } else if (f === 'system') {
@@ -623,13 +671,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     const fontOptGoogle = document.getElementById('font-opt-google');
     const fontOptSf = document.getElementById('font-opt-sf');
     const fontOptSystem = document.getElementById('font-opt-system');
+    const fontOptCustom = document.getElementById('font-opt-custom');
+    const customFontNameLabel = document.getElementById('custom-font-name-label');
+    const btnResetCustom = document.getElementById('btn-reset-custom-font');
     if (fontOptGoogle) fontOptGoogle.classList.toggle('active', f === 'google');
     if (fontOptSf) fontOptSf.classList.toggle('active', f === 'sf');
     if (fontOptSystem) fontOptSystem.classList.toggle('active', f === 'system');
+    if (fontOptCustom) fontOptCustom.classList.toggle('active', f === 'custom');
+
+    const savedCustomName = localStorage.getItem('lumo_custom_font_name');
+    if (customFontNameLabel) {
+      customFontNameLabel.textContent = savedCustomName ? `Custom: ${savedCustomName}` : 'Custom font file (.ttf, .otf, .woff, .woff2)';
+    }
+    if (btnResetCustom) {
+      btnResetCustom.classList.toggle('hidden', !savedCustomName);
+      btnResetCustom.style.display = savedCustomName ? '' : 'none';
+    }
   }
 
   const state = {
-    platform: localStorage.getItem('riff_platform') || 'ytmusic',
+    platform: localStorage.getItem('lumo_platform') || 'ytmusic',
     currentView: 'discover',
     previousView: 'discover',
     currentPlaylistId: null,
@@ -643,10 +704,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentTrackContext: null,
     currentTrackIndexInContext: -1,
     isPlaying: false,
-    isMuted: localStorage.getItem('riff_muted') === '1',
-    volume: savedVolume,
-    isRepeat: localStorage.getItem('riff_repeat') === '1',
-    isShuffle: localStorage.getItem('riff_shuffle') === '1',
+    isMuted: localStorage.getItem('lumo_muted') === '1',
+    isShuffle: false,
+    isRepeat: false,
+    repeatMode: 'off',
     isAutoRemix: false,
     myWaveActive: false,
     isRadioQueue: false,
@@ -657,26 +718,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     isRightPanelOpen: true,
     lyricsMode: 'word',
     uiScale: savedScale,
-    activePresetId: soundPersistenceEnabled ? (localStorage.getItem('riff_active_preset') || 'p_default') : 'p_default',
-    themeMode: localStorage.getItem('riff_theme_mode') || 'dark',
-    paletteStyle: localStorage.getItem('riff_palette_style') || 'classic',
-    meshBrightness: parseInt(localStorage.getItem('riff_mesh_brightness') || '100', 10),
-    themeAccent: localStorage.getItem('riff_theme_accent') || '#6750A4',
-    themeIntensity: parseInt(localStorage.getItem('riff_theme_intensity') || '0'),
-    themeBrightness: parseInt(localStorage.getItem('riff_theme_brightness') || '0'),
-    trEnabled: localStorage.getItem('riff_tr_enabled') === 'true',
-    trLang: localStorage.getItem('riff_tr_lang') || 'en',
-    trAuto: localStorage.getItem('riff_tr_auto') === 'true',
+    activePresetId: soundPersistenceEnabled ? (localStorage.getItem('lumo_active_preset') || 'p_default') : 'p_default',
+    themeMode: localStorage.getItem('lumo_theme_mode') || 'dark',
+    paletteStyle: localStorage.getItem('lumo_palette_style') || 'classic',
+    meshBrightness: parseInt(localStorage.getItem('lumo_mesh_brightness') || '100', 10),
+    themeAccent: localStorage.getItem('lumo_theme_accent') || '#6750A4',
+    themeIntensity: parseInt(localStorage.getItem('lumo_theme_intensity') || '0'),
+    themeBrightness: parseInt(localStorage.getItem('lumo_theme_brightness') || '0'),
+    trEnabled: localStorage.getItem('lumo_tr_enabled') === 'true',
+    trLang: localStorage.getItem('lumo_tr_lang') || 'en',
+    trAuto: localStorage.getItem('lumo_tr_auto') === 'true',
     trActive: false,
     currentTranslations: null,
     isTvKaraokeOpen: false,
                           audioSettings: savedSound.audioSettings,
                           hqEnabled: savedSound.hqEnabled,
                           hqSettings: savedSound.hqSettings,
-                          vfx: { ...defaultVfx, ...safeJson('devsize_vfx', {}), bassPulse: false, particles: false, soundwaveRings: false, borderGlow: false, backdropBlur: false, crt: false, grain: false, lyricsSpotlight: false },
-                          favorites: safeArray('devsize_favorites'),
-                          history: safeArray('devsize_history'),
-                          playlists: safeArray('devsize_playlists'),
+                          vfx: { ...defaultVfx, ...safeJson('lumo_vfx', {}), bassPulse: false, particles: false, soundwaveRings: false, borderGlow: false, backdropBlur: false, crt: false, grain: false, lyricsSpotlight: false },
+                          favorites: safeArray('lumo_favorites'),
+                          history: safeArray('lumo_history'),
+                          playlists: safeArray('lumo_playlists'),
                           customPresets: normalizedCustomPresets,
                           localTracks: [],
                           syncedLyrics: [],
@@ -689,18 +750,18 @@ document.addEventListener('DOMContentLoaded', async () => {
                           currentAbortController: null,
                           presetToRenameId: null,
                           serverPort: 38472,
-                          discordRpcEnabled: safeJson('devsize_discord_rpc', true),
+                          discordRpcEnabled: safeJson('lumo_discord_rpc', true),
                           lastBroadcastStateKey: null,
                           syncTimeout: null,
                           scrubberDragTargetTime: undefined,
-                          riffFont: localStorage.getItem('riff_font') || 'google'
+                          riffFont: localStorage.getItem('lumo_font') || 'google'
   };
 
   function migrateAddedAt() {
     const favorites = backfillAddedAt(state.favorites, true);
     if (favorites !== state.favorites) {
       state.favorites = favorites;
-      localStorage.setItem('devsize_favorites', JSON.stringify(state.favorites));
+      localStorage.setItem('lumo_favorites', JSON.stringify(state.favorites));
     }
     let playlistsChanged = false;
     for (const pl of state.playlists) {
@@ -711,7 +772,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         playlistsChanged = true;
       }
     }
-    if (playlistsChanged) localStorage.setItem('devsize_playlists', JSON.stringify(state.playlists));
+    if (playlistsChanged) localStorage.setItem('lumo_playlists', JSON.stringify(state.playlists));
   }
 
   migrateAddedAt();
@@ -746,15 +807,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     else if (isHttpUrl(track.thumbnail)) rpcThumb = track.thumbnail;
     else if (isHttpUrl(track.cover)) rpcThumb = track.cover;
     const shareUrl = buildRiffShareUrl(track, '', '', 500);
+    const audio = document.getElementById('native-audio');
+    const isCurrentTrack = !!(state.currentTrack && (typeof isSameTrack === 'function' ? isSameTrack(state.currentTrack, track) : state.currentTrack.id === track.id));
+    const position = isCurrentTrack && audio && Number.isFinite(audio.currentTime) ? Math.max(0, audio.currentTime) : 0;
+    // Prefer the real audio duration; some search results carry a wrong or
+    // missing duration, which made Discord show a bogus remaining time.
+    let duration = (audio && Number.isFinite(audio.duration) && audio.duration > 0) ? audio.duration : (Number(track.duration) || 0);
+    if (!(audio && Number.isFinite(audio.duration) && audio.duration > 0) && duration > 36000) {
+      duration = duration / 1000; // metadata arrived in milliseconds
+    }
     window.electronAPI.discordRpcUpdate({
       title: track.title || 'Unknown Track',
       artist: track.artist || 'Unknown Artist',
-      artistInStatus: localStorage.getItem('riff_discord_artist_status') !== '0',
-      duration: track.duration || 0,
+      artistInStatus: localStorage.getItem('lumo_discord_artist_status') !== '0',
+      duration,
       thumbnail: rpcThumb,
       url: shareUrl,
       platform: track.platform || state.platform,
-      startTimestamp: Math.floor(Date.now() / 1000)
+      // Anchor the start to the actual playback position so Discord's elapsed
+      // timer is correct from the very first second (and after seeking).
+      startTimestamp: Math.max(0, Math.floor(Date.now() / 1000) - Math.floor(position))
     });
   }
 
@@ -908,13 +980,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function getAdv(name, defaultVal = true) {
-    const val = localStorage.getItem(`riff_adv_${name}`);
+    const val = localStorage.getItem(`lumo_adv_${name}`);
     if (val === null) return defaultVal;
     return val === 'true';
   }
 
   function setAdv(name, boolVal) {
-    localStorage.setItem(`riff_adv_${name}`, boolVal ? 'true' : 'false');
+    localStorage.setItem(`lumo_adv_${name}`, boolVal ? 'true' : 'false');
   }
 
   function applyReducedMotionSetting() {
@@ -1532,15 +1604,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (mode === 'light') {
         const now = currentUiAlpha();
         if (now < 100) {
-          localStorage.setItem('riff_ui_alpha_light_prev', String(now));
-          localStorage.setItem('riff_ui_alpha_light_auto', '100');
+          localStorage.setItem('lumo_ui_alpha_light_prev', String(now));
+          localStorage.setItem('lumo_ui_alpha_light_auto', '100');
           setUiAlphaViaSlider(100);
         }
       } else if (lastEffectiveMode === 'light') {
-        const auto = localStorage.getItem('riff_ui_alpha_light_auto'), prev = localStorage.getItem('riff_ui_alpha_light_prev');
+        const auto = localStorage.getItem('lumo_ui_alpha_light_auto'), prev = localStorage.getItem('lumo_ui_alpha_light_prev');
         if (auto !== null && prev !== null && currentUiAlpha() === Number(auto)) setUiAlphaViaSlider(Number(prev));
-        localStorage.removeItem('riff_ui_alpha_light_auto');
-        localStorage.removeItem('riff_ui_alpha_light_prev');
+        localStorage.removeItem('lumo_ui_alpha_light_auto');
+        localStorage.removeItem('lumo_ui_alpha_light_prev');
       }
       lastEffectiveMode = mode;
     }
@@ -1682,7 +1754,9 @@ document.addEventListener('DOMContentLoaded', async () => {
                           navAlbums: document.getElementById('nav-albums'),
                           navLocal: document.getElementById('nav-local'),
                           navHistory: document.getElementById('nav-history'),
+                          navStats: document.getElementById('nav-stats'),
                           navQueue: document.getElementById('nav-queue'),
+                          navProfile: document.getElementById('nav-profile'),
                           navSettings: document.getElementById('nav-settings'),
                           favoritesCount: document.getElementById('favorites-count'),
                           albumsCount: document.getElementById('albums-count'),
@@ -1711,11 +1785,14 @@ document.addEventListener('DOMContentLoaded', async () => {
                           savedAlbumsGrid: document.getElementById('saved-albums-grid'),
                           viewLocal: document.getElementById('view-local'),
                           viewHistory: document.getElementById('view-history'),
+                          viewStats: document.getElementById('view-stats'),
                           viewQueue: document.getElementById('view-queue'),
                           viewPlaylistDetail: document.getElementById('view-playlist-detail'),
                           viewAlbum: document.getElementById('view-album'),
                           viewArtist: document.getElementById('view-artist'),
                           viewSettings: document.getElementById('view-settings'),
+                          viewProfile: document.getElementById('view-profile'),
+                          btnUserProfile: document.getElementById('btn-user-profile'),
 
                           btnBackAlbum: document.getElementById('btn-back-album'),
                           btnSaveAlbum: document.getElementById('btn-save-album'),
@@ -1833,6 +1910,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                           downloadPreviewArtist: document.getElementById('download-preview-artist'),
                           btnPlaybarMore: document.getElementById('btn-playbar-more'),
                           btnPlaybarShare: document.getElementById('btn-playbar-share'),
+                          btnPlaybarDots: document.getElementById('btn-playbar-dots'),
 
                           audioSettingsModal: document.getElementById('audio-settings-modal'),
                           btnCloseSettings: document.getElementById('btn-close-settings'),
@@ -1872,6 +1950,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                           valEqHigh: document.getElementById('val-eq-high'),
                           eqBands: document.getElementById('eq-bands'),
                           btnResetEqBands: document.getElementById('btn-reset-eq-bands'),
+                          btnResetAudio: document.getElementById('btn-reset-audio'),
 
                           sliderScale: document.getElementById('settings-slider-scale') || document.getElementById('slider-scale'),
                           valScale: document.getElementById('settings-val-scale') || document.getElementById('val-scale'),
@@ -1951,13 +2030,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (el.sliderScale) el.sliderScale.value = state.uiScale;
   if (el.valScale) el.valScale.textContent = `${state.uiScale}%`;
 
-  const savedFontScale = localStorage.getItem('riff_font_scale') || '100';
+  const savedFontScale = localStorage.getItem('lumo_font_scale') || '100';
   const fontVal = parseInt(savedFontScale, 10) || 100;
   if (el.sliderFontScale) el.sliderFontScale.value = fontVal.toString();
   if (el.valFontScale) el.valFontScale.textContent = `${fontVal}%`;
   document.documentElement.style.setProperty('--font-scale', ((fontVal / 100) * 0.95 * 1.25).toString());
 
-  const savedRadius = localStorage.getItem('riff_corner_radius') || '16';
+  const savedRadius = localStorage.getItem('lumo_corner_radius') || '16';
   if (el.sliderCornerRadius) el.sliderCornerRadius.value = savedRadius;
   if (el.valCornerRadius) el.valCornerRadius.textContent = savedRadius === '16' ? 'Default' : `${savedRadius}px`;
   document.documentElement.style.setProperty('--md-shape-corner-l', `${savedRadius}px`);
@@ -1966,10 +2045,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   applyReducedMotionSetting();
   document.body.classList.toggle('hide-titlebar', !!getAdv('hide_titlebar', false));
 
-  const savedBannerBlur = parseInt(localStorage.getItem('riff_banner_blur') || '3', 10);
-  const savedBannerOpacity = parseInt(localStorage.getItem('riff_banner_opacity') || '100', 10);
-  const savedBannerFade = parseInt(localStorage.getItem('riff_banner_fade') || '100', 10);
-  const savedBannerFit = localStorage.getItem('riff_banner_fit') || 'zoom';
+  const savedBannerBlur = parseInt(localStorage.getItem('lumo_banner_blur') || '3', 10);
+  const savedBannerOpacity = parseInt(localStorage.getItem('lumo_banner_opacity') || '100', 10);
+  const savedBannerFade = parseInt(localStorage.getItem('lumo_banner_fade') || '100', 10);
+  const savedBannerFit = localStorage.getItem('lumo_banner_fit') || 'zoom';
 
   document.documentElement.style.setProperty('--banner-blur', `${savedBannerBlur}px`);
   document.documentElement.style.setProperty('--banner-opacity', `${savedBannerOpacity / 100}`);
@@ -1978,8 +2057,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   applyBannerFit(savedBannerFit);
 
   function applyUiOpacity() {
-    const rawUi = parseInt(localStorage.getItem('riff_ui_alpha') || '20', 10);
-    const rawText = parseInt(localStorage.getItem('riff_text_alpha') || '100', 10);
+    const rawUi = parseInt(localStorage.getItem('lumo_ui_alpha') || '20', 10);
+    const rawText = parseInt(localStorage.getItem('lumo_text_alpha') || '100', 10);
     const uiAlpha = Math.max(20, Math.min(100, isNaN(rawUi) ? 100 : rawUi));
     const textAlpha = Math.max(1, Math.min(100, isNaN(rawText) ? 100 : rawText));
 
@@ -2180,9 +2259,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     d.addEventListener('animationend', () => d.remove());
   }, true);
 
-  function openTrackRenameDialog() {
-    const currentTitle = state.currentTrack?.title || '';
-    const currentArtist = state.currentTrack?.artist || '';
+  let trackBeingRenamed = null;
+  function openTrackRenameDialog(targetTrack = null) {
+    trackBeingRenamed = targetTrack || state.currentTrack;
+    const currentTitle = trackBeingRenamed?.title || '';
+    const currentArtist = trackBeingRenamed?.artist || '';
 
     if (el.inputRenameTitle) el.inputRenameTitle.value = currentTitle;
     if (el.inputRenameArtist) el.inputRenameArtist.value = currentArtist;
@@ -2190,7 +2271,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (el.inputRenameTitle) el.inputRenameTitle.focus();
   }
 
-  if (el.btnEditCurrentTrack) el.btnEditCurrentTrack.addEventListener('click', openTrackRenameDialog);
+  if (el.btnEditCurrentTrack) el.btnEditCurrentTrack.addEventListener('click', () => openTrackRenameDialog());
   if (el.btnCancelRenameTrack) el.btnCancelRenameTrack.addEventListener('click', () => closeModal(el.renameTrackModal));
 
   if (el.btnConfirmRenameTrack) {
@@ -2198,13 +2279,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       const newTitle = el.inputRenameTitle ? el.inputRenameTitle.value.trim() || 'Untitled track' : 'Untitled track';
       const newArtist = el.inputRenameArtist ? el.inputRenameArtist.value.trim() || 'Unknown artist' : 'Unknown artist';
 
-      if (state.currentTrack) {
-        saveTrackRename(getTrackCanonicalId(state.currentTrack), newTitle, newArtist);
-        state.currentTrack.title = newTitle;
-        state.currentTrack.artist = newArtist;
+      const target = trackBeingRenamed || state.currentTrack;
+      if (target) {
+        saveTrackRename(getTrackCanonicalId(target), newTitle, newArtist);
+        target.title = newTitle;
+        target.artist = newArtist;
       }
 
-      updateNowPlayingUI(state.currentTrack);
+      if (state.currentTrack && (!target || target === state.currentTrack || isSameTrack(target, state.currentTrack))) {
+        state.currentTrack.title = newTitle;
+        state.currentTrack.artist = newArtist;
+        updateNowPlayingUI(state.currentTrack);
+      }
 
       const updateArr = (arr) => {
         let updated = false;
@@ -2220,8 +2306,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         return updated;
       };
 
-      if (updateArr(state.history)) localStorage.setItem('devsize_history', JSON.stringify(state.history));
-      if (updateArr(state.favorites)) localStorage.setItem('devsize_favorites', JSON.stringify(state.favorites));
+      if (updateArr(state.history)) localStorage.setItem('lumo_history', JSON.stringify(state.history));
+      if (updateArr(state.favorites)) localStorage.setItem('lumo_favorites', JSON.stringify(state.favorites));
       if (updateArr(state.queue)) renderQueueView();
 
       if (Array.isArray(state.playlists)) {
@@ -2229,7 +2315,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         state.playlists.forEach(pl => {
           if (Array.isArray(pl.tracks) && updateArr(pl.tracks)) plChanged = true;
         });
-        if (plChanged) localStorage.setItem('devsize_playlists', JSON.stringify(state.playlists));
+        if (plChanged) localStorage.setItem('lumo_playlists', JSON.stringify(state.playlists));
       }
 
       sendStateToServer();
@@ -2247,7 +2333,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   animationFrameId = null;
 
   let levelAvgDb = -120;
-  function normalizeEnabled() { return localStorage.getItem('riff_audio_normalize') === '1'; }
+  function normalizeEnabled() { return localStorage.getItem('lumo_audio_normalize') === '1'; }
   function resetLevelWatcher() { levelAvgDb = -120; if (audioEngine && audioEngine.setNormalizeGainDb) audioEngine.setNormalizeGainDb(0); }
   setInterval(() => {
     const audio = el.nativeAudio;
@@ -2297,10 +2383,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     soundSettingsSaveTimer = setTimeout(() => {
       soundSettingsSaveTimer = null;
       try {
-        localStorage.setItem('riff_hq_enabled', state.hqEnabled ? '1' : '0');
-        localStorage.setItem('riff_hq_settings', JSON.stringify(state.hqSettings));
-        localStorage.setItem('riff_audio_settings', JSON.stringify(state.audioSettings));
-        localStorage.setItem('riff_active_preset', state.activePresetId || '');
+        localStorage.setItem('lumo_hq_enabled', state.hqEnabled ? '1' : '0');
+        localStorage.setItem('lumo_hq_settings', JSON.stringify(state.hqSettings));
+        localStorage.setItem('lumo_audio_settings', JSON.stringify(state.audioSettings));
+        localStorage.setItem('lumo_active_preset', state.activePresetId || '');
       } catch (e) {
         console.warn('Failed to save sound settings', e);
       }
@@ -2337,8 +2423,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   let barBgSmoothedHeights = null;
   let vizPrev = null;
   function vizSettings() {
-    const smooth = Math.min(0.95, Math.max(0, (parseInt(localStorage.getItem('riff_viz_smooth') || '55', 10)) / 100));
-    const sens = Math.min(3, Math.max(0, (parseInt(localStorage.getItem('riff_viz_sens') || '100', 10)) / 100));
+    const smooth = Math.min(0.95, Math.max(0, (parseInt(localStorage.getItem('lumo_viz_smooth') || '55', 10)) / 100));
+    const sens = Math.min(3, Math.max(0, (parseInt(localStorage.getItem('lumo_viz_sens') || '100', 10)) / 100));
     return { smooth, sens };
   }
 
@@ -2354,12 +2440,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       const rect = el.scrubberTrack.getBoundingClientRect();
       cachedTrackWidth = rect.width;
-      cachedTrackHeight = Math.max(40, rect.height);
+      cachedTrackHeight = rect.height || 26;
       hasDrawnPausedFrame = false;
       scrubberCanvas.width = rect.width * dpr;
-      scrubberCanvas.height = Math.max(40, rect.height) * dpr;
+      scrubberCanvas.height = (rect.height || 26) * dpr;
       scrubberCanvas.style.width = `${rect.width}px`;
-      scrubberCanvas.style.height = `${Math.max(40, rect.height)}px`;
+      scrubberCanvas.style.height = `${rect.height || 26}px`;
       const ctx = scrubberCanvas.getContext('2d');
       ctx.resetTransform();
       ctx.scale(dpr, dpr);
@@ -2436,7 +2522,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function isVizConnectedMode() {
-    return localStorage.getItem('riff_viz_connected') === '1';
+    return localStorage.getItem('lumo_viz_connected') === '1';
   }
   function drawConnectedLiquidWave(ctx, w, h, heights, color = '#ffffff') {
     const rawN = heights.length;
@@ -2537,7 +2623,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (activeTrim.start > 0 && el.nativeAudio.currentTime < activeTrim.start - 0.25) {
             el.nativeAudio.currentTime = activeTrim.start;
           } else if (activeTrim.end > activeTrim.start && el.nativeAudio.currentTime >= activeTrim.end) {
-            if (state.isRepeat) {
+            if (state.repeatMode === 'one') {
               el.nativeAudio.currentTime = activeTrim.start;
               playSmooth();
             } else {
@@ -2555,12 +2641,12 @@ document.addEventListener('DOMContentLoaded', async () => {
         ccPlayhead.style.left = `${pct}%`;
       }
 
-      if (document.body.classList.contains('perf') && timestamp - lastFrameTime < 33) return;
+      if (document.body.classList.contains('perf') && timestamp - lastFrameTime < 100) return;
       lastFrameTime = timestamp;
 
       const isVisualizerVisible = miniCanvas && miniCanvas.offsetParent !== null && !document.hidden;
       const isTvkVisualizerVisible = state.isTvKaraokeOpen && tvkCanvas && tvkCanvas.offsetParent !== null && !document.hidden;
-      const isBehindVizVisible = document.body.classList.contains('bar-viz-behind') && localStorage.getItem('riff_bar_wave') !== '0' && !document.body.classList.contains('mini') && !document.hidden;
+      const isBehindVizVisible = document.body.classList.contains('bar-viz-behind') && localStorage.getItem('lumo_bar_wave') !== '0' && !document.body.classList.contains('mini') && !document.hidden;
       const needBassPulse = !!(state.vfx && state.vfx.bassPulse);
       const activeGap = document.querySelector('.lyric-line.lyric-gap.active');
 
@@ -2856,10 +2942,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (scrubberCanvas && el.scrubberTrack) {
         const sCtx = scrubberCanvas.getContext('2d');
         const sw = cachedTrackWidth || (el.scrubberTrack ? el.scrubberTrack.clientWidth : 0);
-        const sh = cachedTrackHeight || 40;
+        const sh = cachedTrackHeight || (el.scrubberTrack ? el.scrubberTrack.clientHeight : 26);
         if (!state.isTvKaraokeOpen) sCtx.clearRect(0, 0, sw, sh);
 
-        const dt = scrubLastTime === 0 ? 0.016 : Math.min((timestamp - scrubLastTime) / 1000, 0.1);
+        const dt = scrubLastTime === 0 ? 0.016 : Math.min(Math.max((timestamp - scrubLastTime) / 1000, 0), 0.1);
         scrubLastTime = timestamp;
 
         const dur = getReliableTrackDuration();
@@ -2905,107 +2991,111 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (!state.isTvKaraokeOpen) {
           const targetProgress = dur > 0 ? Math.max(0, Math.min(1, cur / dur)) : 0;
-          const followSpeed = isDraggingScrubber ? 32 : 45;
-          scrubProgress += (targetProgress - scrubProgress) * Math.min(1, dt * followSpeed);
+          if (isDraggingScrubber || !state.isPlaying) {
+            scrubProgress = targetProgress;
+          } else {
+            const followSpeed = 45;
+            scrubProgress += (targetProgress - scrubProgress) * Math.min(1, dt * followSpeed);
+            if (Math.abs(targetProgress - scrubProgress) < 0.0005) scrubProgress = targetProgress;
+          }
 
-          const targetAnim = isDraggingScrubber ? 1 : 0;
-          scrubKnobAnim += (targetAnim - scrubKnobAnim) * Math.min(1, dt * 16);
-          const curKnobW = 7.5 + (9.0 - 7.5) * scrubKnobAnim;
-          const curKnobH = 24 + (32 - 24) * scrubKnobAnim;
-          const curKnobR = 3.75 + (4.5 - 3.75) * scrubKnobAnim;
-
-          const padLeft = 5.5;
-          const padRight = 5.5;
+          const padLeft = 6;
+          const padRight = 6;
           const trackWidth = sw - padLeft - padRight;
           const knobCenterX = padLeft + scrubProgress * trackWidth;
 
-          if (scrubPrevKnobX === null) scrubPrevKnobX = knobCenterX;
-          const deltaX = knobCenterX - scrubPrevKnobX;
-          scrubPrevKnobX = knobCenterX;
-
-          const k = (2 * Math.PI) / 42;
-
-          if (isDraggingScrubber) {
-            scrubPhase += deltaX * k;
-          } else if (state.isPlaying) {
-            scrubPhase += 3.5 * dt;
-          }
-
-          const noKnob = document.body.classList.contains('no-knob');
-          const capRadius = 9.5 / 2;
-          const knobLeft = knobCenterX - curKnobW / 2;
-          const waveStart = padLeft;
-          const waveEnd = noKnob ? knobCenterX : (knobLeft - 4.5 - capRadius);
-
-          const bgStartX = noKnob ? knobCenterX : (knobCenterX + (curKnobW / 2) + 4);
-          const bgEndX = sw - padRight;
-
           if (!cachedPrimaryColor) refreshCachedThemeColors();
-          const primaryColor = cachedPrimaryColor;
-          const dimColor = cachedDimColor;
-
+          const primaryColor = cachedPrimaryColor || '#d0bcff';
+          const dimColor = cachedDimColor || 'rgba(255, 255, 255, 0.2)';
           const centerY = sh / 2;
 
-          const showProgressBg = localStorage.getItem('riff_progress_bg') === 'true';
-          if (showProgressBg && bgStartX < bgEndX - 1) {
+          const isHover = (typeof isHoveringScrubber !== 'undefined' && isHoveringScrubber) || isDraggingScrubber;
+          const barHeight = isHover ? 5 : 4;
+          const showProgressBg = localStorage.getItem('lumo_progress_bg') !== 'false';
+          const noKnob = document.body.classList.contains('no-knob');
+          const isWavy = !document.body.classList.contains('no-wavy') && localStorage.getItem('lumo_wavy_progress') === 'true';
+
+          // Draw unplayed track rail only when wavy progress is NOT active
+          if (!isWavy && showProgressBg && sw > padLeft + padRight) {
             sCtx.save();
-            sCtx.globalAlpha = 0.3;
             sCtx.beginPath();
-            sCtx.lineWidth = 11;
+            sCtx.lineWidth = barHeight;
             sCtx.lineCap = 'round';
             sCtx.strokeStyle = dimColor;
-            sCtx.moveTo(bgStartX, centerY);
-            sCtx.lineTo(bgEndX, centerY);
+            sCtx.moveTo(padLeft, centerY);
+            sCtx.lineTo(sw - padRight, centerY);
             sCtx.stroke();
             sCtx.restore();
           }
 
-          if (waveEnd > waveStart) {
+          // Draw played progress fill
+          if (knobCenterX > padLeft) {
+            sCtx.save();
             sCtx.beginPath();
-            sCtx.lineWidth = 9.5;
+            sCtx.lineWidth = barHeight;
             sCtx.lineCap = 'round';
             sCtx.lineJoin = 'round';
             sCtx.strokeStyle = primaryColor;
 
-            if (document.body.classList.contains('no-wavy')) {
-              sCtx.moveTo(waveStart, centerY);
-              sCtx.lineTo(waveEnd, centerY);
+            if (isWavy) {
+              const k = (2 * Math.PI) / 42;
+              if (isDraggingScrubber) {
+                if (scrubPrevKnobX === null) scrubPrevKnobX = knobCenterX;
+                scrubPhase += (knobCenterX - scrubPrevKnobX) * k;
+              } else if (state.isPlaying) {
+                scrubPhase += 3.5 * dt;
+              }
+              const totalDist = knobCenterX - padLeft;
+              const step = 2;
+              sCtx.beginPath();
+              sCtx.moveTo(padLeft, centerY);
+              for (let x = padLeft; x <= knobCenterX; x += step) {
+                const t = totalDist > 0 ? (x - padLeft) / totalDist : 0;
+                const envelope = Math.sin(Math.PI * t);
+                const angle = scrubPhase - (knobCenterX - x) * k;
+                const y = centerY + Math.sin(angle) * 4 * envelope;
+                if (x === padLeft) sCtx.moveTo(x, centerY);
+                else sCtx.lineTo(x, y);
+              }
+              sCtx.lineTo(knobCenterX, centerY);
               sCtx.stroke();
             } else {
-              const step = 2;
-              for (let x = waveStart; x <= waveEnd; x += step) {
-                const angle = scrubPhase - (waveEnd - x) * k;
-                const y = centerY + Math.sin(angle) * 5;
-                if (x === waveStart) {
-                  sCtx.moveTo(x, y);
-                } else {
-                  sCtx.lineTo(x, y);
-                }
-              }
-
-              const finalY = centerY + Math.sin(scrubPhase) * 5;
-              sCtx.lineTo(waveEnd, finalY);
+              sCtx.moveTo(padLeft, centerY);
+              sCtx.lineTo(knobCenterX, centerY);
               sCtx.stroke();
             }
+            sCtx.restore();
           }
 
+          scrubPrevKnobX = knobCenterX;
+
+          // Draw knob/scrubber handle
           if (!noKnob) {
+            const knobRadius = isDraggingScrubber ? 7 : (isHover ? 6 : 5.5);
+            sCtx.save();
             sCtx.beginPath();
-            sCtx.roundRect(knobLeft, centerY - curKnobH / 2, curKnobW, curKnobH, curKnobR);
-            sCtx.fillStyle = primaryColor;
+            sCtx.arc(knobCenterX, centerY, knobRadius, 0, Math.PI * 2);
+            sCtx.fillStyle = '#ffffff';
             sCtx.fill();
+            sCtx.restore();
           }
         }
       }
     }
+    // renderLoop is kicked off with timestamp 0; without resetting the delta
+    // baseline the first frame would compute a huge negative dt and fling the
+    // scrubber knob off the track (visible when play/pause is spammed).
+    scrubLastTime = 0;
     renderLoop(0);
   }
 
   function handleVisibilityChange(visible) {
+    const wasVisible = state.isWindowVisible;
     state.isWindowVisible = visible;
     syncBgVideoPlayback();
     if (audioEngine && audioEngine.setHidden) audioEngine.setHidden(!visible);
     if (!visible) {
+      if (wasVisible === false) return;
       if (typeof lyricsScrollRaf !== 'undefined' && lyricsScrollRaf) {
         cancelAnimationFrame(lyricsScrollRaf);
         lyricsScrollRaf = 0;
@@ -3025,6 +3115,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.body.classList.add('app-paused');
       document.body.classList.add('hidden-window');
       if (typeof updateCoverAnimVisibility === 'function') updateCoverAnimVisibility();
+      if (audioEngine && audioEngine.setAnalyserEnabled) audioEngine.setAnalyserEnabled(false);
+      try {
+        ['squiggly-canvas', 'visualizer-canvas', 'tvk-visualizer-canvas', 'playbar-bg-visualizer'].forEach(id => {
+          const canvas = document.getElementById(id);
+          if (!canvas) return;
+          const ctx = canvas.getContext('2d');
+          if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        });
+      } catch (e) {}
+      // Give the stopped loops/DOM a moment to settle, then reclaim memory.
+      setTimeout(() => { try { if (window.gc) window.gc(); } catch (e) {} }, 700);
+      setTimeout(() => { try { if (window.gc) window.gc(); } catch (e) {} }, 2500);
     } else {
       document.body.classList.remove('app-paused');
       document.body.classList.remove('hidden-window');
@@ -3142,6 +3244,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (el.sliderHqAir) { el.sliderHqAir.value = state.hqSettings.air; if (el.valHqAir) el.valHqAir.textContent = `${state.hqSettings.air > 0 ? '+' : ''}${state.hqSettings.air}%`; }
       if (el.sliderHqBass) { el.sliderHqBass.value = state.hqSettings.bass; if (el.valHqBass) el.valHqBass.textContent = `${state.hqSettings.bass > 0 ? '+' : ''}${state.hqSettings.bass}%`; }
       if (el.hqPresetChips) el.hqPresetChips.forEach(c => c.classList.toggle('active', c.dataset.preset === state.hqSettings.preset));
+      if (el.hqEngineSelect) el.hqEngineSelect.value = state.hqSettings.engine;
+      const hqLabel = document.getElementById('hq-engine-label');
+      const hqMenu = document.getElementById('hq-engine-menu');
+      if (hqMenu) {
+        hqMenu.querySelectorAll('.m3-dropdown-option').forEach(opt => {
+          const isSel = opt.dataset.value === state.hqSettings.engine;
+          opt.classList.toggle('selected', isSel);
+          if (isSel && hqLabel) hqLabel.textContent = opt.textContent;
+        });
+      }
     }
   }
 
@@ -3260,7 +3372,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const bannerImg = banner.querySelector('.banner-image') || banner;
     const trackArt = state.currentTrack ? getTrackArt(state.currentTrack) : {};
     const trackBanner = trackArt.banner || null;
-    const globalMedia = localStorage.getItem('riff_banner_media');
+    const globalMedia = localStorage.getItem('lumo_banner_media');
     const mediaToUse = trackBanner || globalMedia || thumbUrl;
 
     const hasCustomFx = !!(trackArt.bannerCustomFx || (trackArt.bannerFx && trackArt.bannerFx.enabled));
@@ -3360,7 +3472,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     banner.style.display = '';
     const bannerImg = banner.querySelector('.banner-image') || banner;
-    const globalMedia = localStorage.getItem('riff_banner_media');
+    const globalMedia = localStorage.getItem('lumo_banner_media');
     const mediaToUse = globalMedia || thumbUrl;
 
     if (!mediaToUse) {
@@ -3419,10 +3531,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function isSameTrack(a, b) {
     if (!a || !b) return false;
+    if (a.id && b.id && a.id === b.id) return true;
+    if (a.url && b.url && a.url === b.url) return true;
     return getTrackCanonicalId(a) === getTrackCanonicalId(b);
   }
 
-  function getTrackTrims() { return safeJson('riff_track_trims', {}); }
+  function getTrackTrims() { return safeJson('lumo_track_trims', {}); }
   function getTrackTrim(track) {
     if (!track) return null;
     const cid = getTrackCanonicalId(track);
@@ -3438,12 +3552,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else {
       all[cid] = { start: Math.round(startSec * 10) / 10, end: Math.round(endSec * 10) / 10, updatedAt: Date.now() };
     }
-    try { localStorage.setItem('riff_track_trims', JSON.stringify(all)); } catch (_) {}
+    try { localStorage.setItem('lumo_track_trims', JSON.stringify(all)); } catch (_) {}
   }
 
   function getTrackArt(t) {
     try {
-      return JSON.parse(localStorage.getItem('riff_track_art') || '{}')[getTrackCanonicalId(t)] || {};
+      return JSON.parse(localStorage.getItem('lumo_track_art') || '{}')[getTrackCanonicalId(t)] || {};
     } catch (e) {
       return {};
     }
@@ -3452,22 +3566,22 @@ document.addEventListener('DOMContentLoaded', async () => {
   function setTrackArt(t, patch) {
     let all = {};
     try {
-      all = JSON.parse(localStorage.getItem('riff_track_art') || '{}');
+      all = JSON.parse(localStorage.getItem('lumo_track_art') || '{}');
     } catch (e) {}
     const id = getTrackCanonicalId(t);
     if (!id) return;
     const cur = { ...(all[id] || {}), ...patch };
     for (const k in cur) if (cur[k] === undefined || cur[k] === null || cur[k] === '') delete cur[k];
     if (Object.keys(cur).length) all[id] = cur; else delete all[id];
-    localStorage.setItem('riff_track_art', JSON.stringify(all));
+    localStorage.setItem('lumo_track_art', JSON.stringify(all));
   }
 
-  function getTrackRenames() { return safeJson('riff_track_renames', {}); }
+  function getTrackRenames() { return safeJson('lumo_track_renames', {}); }
   function saveTrackRename(canonicalId, title, artist) {
     if (!canonicalId) return;
     const all = getTrackRenames();
     all[canonicalId] = { title, artist, updatedAt: Date.now() };
-    try { localStorage.setItem('riff_track_renames', JSON.stringify(all)); } catch (_) {}
+    try { localStorage.setItem('lumo_track_renames', JSON.stringify(all)); } catch (_) {}
   }
   function applyTrackRenames(t) {
     if (!t) return t;
@@ -3522,11 +3636,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   let navigatingBack = false;
 
   const lastfmState = {
-    enabled: localStorage.getItem('riff_lastfm_enabled') !== 'false',
-    sessionKey: localStorage.getItem('riff_lastfm_sk') || '',
-    username: localStorage.getItem('riff_lastfm_user') || '',
-    apiKey: localStorage.getItem('riff_lastfm_apikey') || '',
-    apiSecret: localStorage.getItem('riff_lastfm_apisecret') || '',
+    enabled: localStorage.getItem('lumo_lastfm_enabled') !== 'false',
+    sessionKey: localStorage.getItem('lumo_lastfm_sk') || '',
+    username: localStorage.getItem('lumo_lastfm_user') || '',
+    apiKey: localStorage.getItem('lumo_lastfm_apikey') || '',
+    apiSecret: localStorage.getItem('lumo_lastfm_apisecret') || '',
     currentTrackKey: '',
     startedAtUnix: 0,
     playedSeconds: 0,
@@ -3755,6 +3869,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (el.tvkSeekSlider) el.tvkSeekSlider.value = 0;
     scrubPrevKnobX = null;
     scrubProgress = 0;
+    // A new track must start from 0, never from the position where the
+    // previous track was paused (playSmooth restores this value).
+    frozenCurTime = 0;
 
     if (el.trackLoadingOverlay) {
       if (el.trackLoadingTitle) el.trackLoadingTitle.textContent = track.title || 'loading track...';
@@ -3768,11 +3885,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (state.currentAbortController) {
       state.currentAbortController.abort();
     }
-    state.currentAbortController = new AbortController();
-    const signal = state.currentAbortController.signal;
+    const abortController = new AbortController();
+    state.currentAbortController = abortController;
+    const signal = abortController.signal;
+    let fetchTimedOut = false;
     const fetchAbortTimeout = setTimeout(() => {
-      try { state.currentAbortController?.abort(); } catch (_) {}
-    }, 20000);
+      fetchTimedOut = true;
+      try { abortController.abort(); } catch (_) {}
+    }, 35000);
+
+    if (state.playbackLoadTimeout) clearTimeout(state.playbackLoadTimeout);
+    state.playbackLoadTimeout = setTimeout(() => {
+      if (currentToken !== state.loadToken) return;
+      state.playbackLoadTimeout = null;
+      try { el.nativeAudio.pause(); } catch (_) {}
+      state.isPlaying = false;
+      document.body.classList.remove('is-playing');
+      updatePlayPauseButton(false, false);
+      if (el.trackLoadingOverlay) el.trackLoadingOverlay.classList.add('hidden');
+      showToast('This track did not start. Please try again.', 'error');
+    }, 40000);
 
     state.currentTrack = track;
     emitPluginEvent('trackchange', track);
@@ -3807,7 +3939,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     state.history = state.history.filter(t => !isSameTrack(t, track));
     state.history.unshift(track);
     if (state.history.length > 100) state.history.pop();
-    localStorage.setItem('devsize_history', JSON.stringify(state.history));
+    localStorage.setItem('lumo_history', JSON.stringify(state.history));
     updateHistoryBadge();
     if (state.currentView === 'history') renderHistoryView();
 
@@ -3831,19 +3963,27 @@ document.addEventListener('DOMContentLoaded', async () => {
       let resolvedId = track.id;
 
       let isCached = false;
-      if (track && track.id) {
+      if (track && (track.id || track.title)) {
         try {
-          const cacheRes = await fetch(`http://127.0.0.1:${state.serverPort}/api/check-cache?id=${encodeURIComponent(track.id)}`, { signal });
+          const tParam = encodeURIComponent(track.title || '');
+          const aParam = encodeURIComponent(track.artist || '');
+          const idParam = encodeURIComponent(track.id || '');
+          const cacheRes = await fetch(`http://127.0.0.1:${state.serverPort}/api/check-cache?id=${idParam}&title=${tParam}&artist=${aParam}`, { signal });
           const cacheData = await cacheRes.json();
           if (currentToken !== state.loadToken) return;
-          if (cacheData && cacheData.cached) {
+          if (cacheData && cacheData.cached && cacheData.streamUrl) {
             isCached = true;
+            el.nativeAudio.preload = 'auto';
+            el.nativeAudio.src = cacheData.streamUrl;
+            playSmooth();
+            applyAudioSettings();
+            return;
           }
         } catch (_) {}
       }
       if (currentToken !== state.loadToken) return;
 
-      if (!isCached && ((!resolvedUrl && !resolvedId) || (resolvedUrl && resolvedUrl.includes('/results?search_query=')) || (resolvedId && String(resolvedId).startsWith('it-') && !resolvedUrl))) {
+      if (!isCached && ((!resolvedUrl && !resolvedId) || (resolvedUrl && resolvedUrl.includes('/results?search_query=')) || (resolvedId && (String(resolvedId).startsWith('it-') || String(resolvedId).startsWith('it_')) && (!resolvedUrl || resolvedUrl.includes('results?'))) || (track.platform === 'applemusic' && (!resolvedUrl || resolvedUrl.includes('results?'))))) {
         const sq = track.searchQuery || ((track.artist ? track.artist + ' - ' : '') + (track.title || '')).trim();
         if (sq) {
           try {
@@ -3859,7 +3999,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
 
-      const streamInfoUrl = `http://127.0.0.1:${state.serverPort}/api/stream-info?url=${encodeURIComponent(resolvedUrl || '')}&id=${encodeURIComponent(resolvedId || '')}&platform=${track.platform || state.platform}&title=${encodeURIComponent(track.title || '')}&artist=${encodeURIComponent(track.artist || '')}&duration=${encodeURIComponent(track.duration || 0)}&thumbnail=${encodeURIComponent(track.thumbnail || '')}`;
+      const declaredPlatform = String(track.platform || track.source || '').toLowerCase();
+      const inferredPlatform = /soundcloud\.com/i.test(String(track.url || '')) ? 'soundcloud' : declaredPlatform;
+      const streamPlatform = inferredPlatform === 'applemusic' ? 'youtube' : (inferredPlatform || (state.platform === 'all' ? 'youtube' : state.platform));
+      const streamInfoUrl = `http://127.0.0.1:${state.serverPort}/api/stream-info?url=${encodeURIComponent(resolvedUrl || '')}&id=${encodeURIComponent(resolvedId || '')}&platform=${streamPlatform}&title=${encodeURIComponent(track.title || '')}&artist=${encodeURIComponent(track.artist || '')}&duration=${encodeURIComponent(track.duration || 0)}&thumbnail=${encodeURIComponent(track.thumbnail || '')}`;
       let res;
       try {
         res = await fetch(streamInfoUrl, { signal });
@@ -3871,9 +4014,45 @@ document.addEventListener('DOMContentLoaded', async () => {
           throw fetchErr;
         }
       }
-      const data = await res.json();
+      let data = await res.json();
 
       if (currentToken !== state.loadToken) return;
+
+      // Some SoundCloud tracks are no longer streamable from SoundCloud (for
+      // example, DRM-restricted uploads). Try the same track on YouTube before
+      // giving up so imported playlists do not stay stuck on the loading state.
+      if ((!data || !data.success || !data.streamUrl) && streamPlatform === 'soundcloud' && navigator.onLine) {
+        const fallbackQuery = ((track.artist ? track.artist + ' - ' : '') + (track.title || '')).trim();
+        if (fallbackQuery) {
+          try {
+            const searchRes = await fetch(`http://127.0.0.1:${state.serverPort}/api/search?q=${encodeURIComponent(fallbackQuery)}&platform=youtube&limit=5`, { signal });
+            const searchData = await searchRes.json();
+            const candidates = Array.isArray(searchData.tracks) ? searchData.tracks.slice(0, 3) : [];
+            for (const candidate of candidates) {
+              const fallbackUrl = candidate.url || (candidate.id ? `https://www.youtube.com/watch?v=${encodeURIComponent(candidate.id)}` : '');
+              if (!fallbackUrl) continue;
+              const fallbackParams = new URLSearchParams({
+                url: fallbackUrl,
+                id: candidate.id || '',
+                platform: 'youtube',
+                title: candidate.title || track.title || '',
+                artist: candidate.artist || track.artist || '',
+                duration: String(candidate.duration || track.duration || 0),
+                thumbnail: candidate.thumbnail || track.thumbnail || ''
+              });
+              const fallbackRes = await fetch(`http://127.0.0.1:${state.serverPort}/api/stream-info?${fallbackParams}`, { signal });
+              const fallbackData = await fallbackRes.json();
+              if (fallbackData && fallbackData.success && fallbackData.streamUrl) {
+                data = fallbackData;
+                showToast('SoundCloud stream unavailable; playing a matching YouTube version.', 'info');
+                break;
+              }
+            }
+          } catch (fallbackError) {
+            if (fallbackError && fallbackError.name === 'AbortError') throw fallbackError;
+          }
+        }
+      }
 
       if (!data || !data.success || !data.streamUrl) {
         if (!navigator.onLine) {
@@ -3912,9 +4091,20 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       applyAudioSettings();
     } catch (err) {
-      if (err.name === 'AbortError') return;
+      if (err.name === 'AbortError') {
+        if (currentToken === state.loadToken) {
+          if (state.playbackLoadTimeout) { clearTimeout(state.playbackLoadTimeout); state.playbackLoadTimeout = null; }
+          state.isPlaying = false;
+          updatePlayPauseButton(false, false);
+          if (el.trackLoadingOverlay) el.trackLoadingOverlay.classList.add('hidden');
+          if (fetchTimedOut) showToast('Track took too long to load. Please try again.', 'error');
+        }
+        return;
+      }
       if (currentToken === state.loadToken) {
+        if (state.playbackLoadTimeout) { clearTimeout(state.playbackLoadTimeout); state.playbackLoadTimeout = null; }
         console.warn('Track playback notice:', err);
+        state.isPlaying = false;
         updatePlayPauseButton(false, false);
         if (el.trackLoadingOverlay) el.trackLoadingOverlay.classList.add('hidden');
         showToast(err.message || 'Could not load audio stream', 'error');
@@ -4099,7 +4289,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function fetchAndUpgradeWords(title, artist, trackId, token) {
-    const wordSource = localStorage.getItem('riff_word_source') || 'auto';
+    const wordSource = localStorage.getItem('lumo_word_source') || 'auto';
     if (wordSource === 'estimate') return;
 
     const cachedWords = wordsSessionCache.get(trackId);
@@ -4297,7 +4487,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (typeof renderMiniLyrics === 'function') renderMiniLyrics();
 
     try {
-      const source = localStorage.getItem('riff_lyrics_source') === 'genius' ? 'genius' : 'lrclib';
+      const source = localStorage.getItem('lumo_lyrics_source') === 'genius' ? 'genius' : 'lrclib';
       const trackId = (state.currentTrack && state.currentTrack.id) || `${artist}:${title}`;
       const lyricsCacheKey = `${trackId}:${source}`;
 
@@ -4460,7 +4650,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  function getLyricsWordStyle() { return localStorage.getItem('riff_lyrics_word_style') === 'words' ? 'words' : 'gradient'; }
+  function getLyricsWordStyle() { return localStorage.getItem('lumo_lyrics_word_style') === 'words' ? 'words' : 'gradient'; }
   function isGradientMode() { return state.lyricsMode === 'word' && getAdv('karaoke_words', true) && getLyricsWordStyle() === 'gradient'; }
 
   function renderLyricsView() {
@@ -4940,7 +5130,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     '.dialog-card span:not([class])'
   ].join(', ');
 
-  const savedUiLang = localStorage.getItem('riff_ui_lang') || 'en';
+  const savedUiLang = localStorage.getItem('lumo_ui_lang') || 'en';
   if (savedUiLang !== 'en') {
     applyI18n(savedUiLang);
   }
@@ -4971,8 +5161,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function applyI18n(lang) {
-    lang = lang || localStorage.getItem('riff_ui_lang') || 'en';
-    localStorage.setItem('riff_ui_lang', lang);
+    lang = lang || localStorage.getItem('lumo_ui_lang') || 'en';
+    localStorage.setItem('lumo_ui_lang', lang);
 
     const found = TRANSLATION_LANGUAGES.find(l => l.code === lang);
     const uiLangLabel = document.getElementById('ui-lang-label');
@@ -5187,11 +5377,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     linear: { css: 'linear', fn: (t) => t }
   };
   function getLyricsEase() {
-    const v = localStorage.getItem('riff_lyrics_ease');
+    const v = localStorage.getItem('lumo_lyrics_ease');
     return LYRIC_EASINGS[v] ? v : 'inout';
   }
   function getLyricsSpeed() {
-    const v = parseFloat(localStorage.getItem('riff_lyrics_speed'));
+    const v = parseFloat(localStorage.getItem('lumo_lyrics_speed'));
     return (v >= 0.5 && v <= 2.5) ? v : 1.0;
   }
   function applyLyricsEase() {
@@ -5202,7 +5392,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.documentElement.style.setProperty('--lyric-duration', `${(baseDuration / speed).toFixed(2)}s`);
   }
   function getLyricsGradientTightness() {
-    const v = parseInt(localStorage.getItem('riff_lyrics_gradient_tightness') || localStorage.getItem('riff_gradient_tight'), 10);
+    const v = parseInt(localStorage.getItem('lumo_lyrics_gradient_tightness') || localStorage.getItem('lumo_gradient_tight'), 10);
     return (v >= 0 && v <= 40) ? v : 2;
   }
   function applyLyricsGradientTightness() {
@@ -6230,7 +6420,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function getTvk() {
     try {
-      const raw = localStorage.getItem('riff_tvk');
+      const raw = localStorage.getItem('lumo_tvk');
       if (raw) {
         const parsed = JSON.parse(raw);
         return {
@@ -6249,13 +6439,13 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function saveTvk(settings) {
     try {
-      localStorage.setItem('riff_tvk', JSON.stringify(settings));
+      localStorage.setItem('lumo_tvk', JSON.stringify(settings));
     } catch (_) {}
   }
 
   function updateTvkVisualizerSetting(enabled) {
     const on = enabled !== false && enabled !== 'false';
-    localStorage.setItem('riff_tvk_visualizer', on ? 'true' : 'false');
+    localStorage.setItem('lumo_tvk_visualizer', on ? 'true' : 'false');
     const tv = document.getElementById('tv-karaoke');
     if (tv) {
       tv.classList.toggle('no-tvk-visualizer', !on);
@@ -6272,7 +6462,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function updateTvkVisualizerLyricsSetting(enabled) {
     const on = enabled !== false && enabled !== 'false';
-    localStorage.setItem('riff_tvk_visualizer_lyrics', on ? 'true' : 'false');
+    localStorage.setItem('lumo_tvk_visualizer_lyrics', on ? 'true' : 'false');
     const tv = document.getElementById('tv-karaoke');
     if (tv) {
       tv.classList.toggle('tvk-show-lyrics-visualizer', on);
@@ -6291,7 +6481,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     let val = parseInt(opacityVal, 10);
     if (isNaN(val)) val = 85;
     val = Math.max(10, Math.min(100, val));
-    localStorage.setItem('riff_tvk_visualizer_opacity', val.toString());
+    localStorage.setItem('lumo_tvk_visualizer_opacity', val.toString());
 
     const norm = (val / 100).toFixed(2);
     const tv = document.getElementById('tv-karaoke');
@@ -6333,11 +6523,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     tv.setAttribute('data-tvk-anim', anim);
     tv.setAttribute('data-tvk-align', align);
 
-    const tvkVisOn = localStorage.getItem('riff_tvk_visualizer') !== 'false';
+    const tvkVisOn = localStorage.getItem('lumo_tvk_visualizer') !== 'false';
     tv.classList.toggle('no-tvk-visualizer', !tvkVisOn);
-    const tvkVisLyricsOn = localStorage.getItem('riff_tvk_visualizer_lyrics') !== 'false';
+    const tvkVisLyricsOn = localStorage.getItem('lumo_tvk_visualizer_lyrics') !== 'false';
     tv.classList.toggle('tvk-show-lyrics-visualizer', tvkVisLyricsOn);
-    const visOpacity = parseInt(localStorage.getItem('riff_tvk_visualizer_opacity') || '85', 10);
+    const visOpacity = parseInt(localStorage.getItem('lumo_tvk_visualizer_opacity') || '85', 10);
     tv.style.setProperty('--tvk-vis-opacity', (Math.max(10, Math.min(100, visOpacity)) / 100).toFixed(2));
   }
 
@@ -6401,22 +6591,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (valGap) valGap.textContent = `${s.gap}px`;
     if (valSpeed) valSpeed.textContent = `${s.speed}ms`;
 
-    const tvkVisOn = localStorage.getItem('riff_tvk_visualizer') !== 'false';
+    const tvkVisOn = localStorage.getItem('lumo_tvk_visualizer') !== 'false';
     const btnTvkVis = document.getElementById('btn-tvk-visualizer');
     if (btnTvkVis) btnTvkVis.classList.toggle('active', tvkVisOn);
     const btnTvkVisSetting = document.getElementById('btn-tvk-visualizer-setting');
     if (btnTvkVisSetting) btnTvkVisSetting.classList.toggle('active', tvkVisOn);
 
-    const tvkVisLyricsOn = localStorage.getItem('riff_tvk_visualizer_lyrics') !== 'false';
+    const tvkVisLyricsOn = localStorage.getItem('lumo_tvk_visualizer_lyrics') !== 'false';
     const btnTvkVisLyrics = document.getElementById('btn-tvk-visualizer-lyrics');
     if (btnTvkVisLyrics) btnTvkVisLyrics.classList.toggle('active', tvkVisLyricsOn);
     const btnTvkVisLyricsSetting = document.getElementById('btn-tvk-visualizer-lyrics-setting');
     if (btnTvkVisLyricsSetting) btnTvkVisLyricsSetting.classList.toggle('active', tvkVisLyricsOn);
 
     const btnTvkVizConnectedEl = document.getElementById('btn-tvk-viz-connected');
-    if (btnTvkVizConnectedEl) btnTvkVizConnectedEl.classList.toggle('active', localStorage.getItem('riff_viz_connected') === '1');
+    if (btnTvkVizConnectedEl) btnTvkVizConnectedEl.classList.toggle('active', localStorage.getItem('lumo_viz_connected') === '1');
 
-    const visOpacity = parseInt(localStorage.getItem('riff_tvk_visualizer_opacity') || '85', 10);
+    const visOpacity = parseInt(localStorage.getItem('lumo_tvk_visualizer_opacity') || '85', 10);
     const sliderTvkVisOpacity = document.getElementById('tvk-vis-opacity');
     if (sliderTvkVisOpacity) sliderTvkVisOpacity.value = visOpacity;
     const valTvkVisOpacity = document.getElementById('val-tvk-vis-opacity');
@@ -6589,14 +6779,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const btnTvkVis = document.getElementById('btn-tvk-visualizer');
     if (btnTvkVis) {
       btnTvkVis.addEventListener('click', () => {
-        const cur = localStorage.getItem('riff_tvk_visualizer') !== 'false';
+        const cur = localStorage.getItem('lumo_tvk_visualizer') !== 'false';
         updateTvkVisualizerSetting(!cur);
       });
     }
     const btnTvkVisSetting = document.getElementById('btn-tvk-visualizer-setting');
     if (btnTvkVisSetting) {
       btnTvkVisSetting.addEventListener('click', () => {
-        const cur = localStorage.getItem('riff_tvk_visualizer') !== 'false';
+        const cur = localStorage.getItem('lumo_tvk_visualizer') !== 'false';
         updateTvkVisualizerSetting(!cur);
       });
     }
@@ -6604,14 +6794,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const btnTvkVisLyrics = document.getElementById('btn-tvk-visualizer-lyrics');
     if (btnTvkVisLyrics) {
       btnTvkVisLyrics.addEventListener('click', () => {
-        const cur = localStorage.getItem('riff_tvk_visualizer_lyrics') !== 'false';
+        const cur = localStorage.getItem('lumo_tvk_visualizer_lyrics') !== 'false';
         updateTvkVisualizerLyricsSetting(!cur);
       });
     }
     const btnTvkVisLyricsSetting = document.getElementById('btn-tvk-visualizer-lyrics-setting');
     if (btnTvkVisLyricsSetting) {
       btnTvkVisLyricsSetting.addEventListener('click', () => {
-        const cur = localStorage.getItem('riff_tvk_visualizer_lyrics') !== 'false';
+        const cur = localStorage.getItem('lumo_tvk_visualizer_lyrics') !== 'false';
         updateTvkVisualizerLyricsSetting(!cur);
       });
     }
@@ -6637,7 +6827,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const valVizSmooth = document.getElementById('val-viz-smooth');
     const sliderBarVizSmooth = document.getElementById('slider-bar-viz-smooth');
     const valBarVizSmooth = document.getElementById('val-bar-viz-smooth');
-    const initialVizSmooth = localStorage.getItem('riff_viz_smooth') || '55';
+    const initialVizSmooth = localStorage.getItem('lumo_viz_smooth') || '55';
     function syncSmooth(v) {
       if (sliderVizSmooth) sliderVizSmooth.value = v;
       if (valVizSmooth) valVizSmooth.textContent = `${v}%`;
@@ -6647,7 +6837,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     syncSmooth(initialVizSmooth);
     const onSmoothInput = (e) => {
       const v = e.target.value;
-      localStorage.setItem('riff_viz_smooth', v);
+      localStorage.setItem('lumo_viz_smooth', v);
       syncSmooth(v);
     };
     if (sliderVizSmooth) {
@@ -6663,7 +6853,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const valVizSens = document.getElementById('val-viz-sens');
     const sliderBarVizSens = document.getElementById('slider-bar-viz-sens');
     const valBarVizSens = document.getElementById('val-bar-viz-sens');
-    const initialVizSens = localStorage.getItem('riff_viz_sens') || '100';
+    const initialVizSens = localStorage.getItem('lumo_viz_sens') || '100';
     function syncSens(v) {
       if (sliderVizSens) sliderVizSens.value = v;
       if (valVizSens) valVizSens.textContent = `${v}%`;
@@ -6673,7 +6863,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     syncSens(initialVizSens);
     const onSensInput = (e) => {
       const v = e.target.value;
-      localStorage.setItem('riff_viz_sens', v);
+      localStorage.setItem('lumo_viz_sens', v);
       syncSens(v);
     };
     if (sliderVizSens) {
@@ -6704,6 +6894,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     if (el.customLyricsTrackTitle) el.customLyricsTrackTitle.textContent = (state.currentTrack.title || 'untitled');
     if (el.customLyricsTrackArtist) el.customLyricsTrackArtist.textContent = (state.currentTrack.artist || '');
+    const resetLyricsButton = document.getElementById('btn-reset-custom-lyrics');
+    if (resetLyricsButton) resetLyricsButton.classList.toggle('hidden', !state.isCustomLyrics);
 
     if (state.syncedLyrics && state.syncedLyrics.length > 0 && el.customLyricsTextarea) {
       el.customLyricsTextarea.value = state.syncedLyrics.map(l => l.isGap ? '[Instrumental]' : l.text).join('\n');
@@ -6740,7 +6932,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const data = await res.json();
       if (!data.success) throw new Error(data.error || 'Save failed');
 
-      showToast(text ? 'Lyrics saved successfully' : 'Lyrics removed', 'info');
+      showToastNow(text ? 'Lyrics saved successfully' : 'Lyrics removed', 'info');
       closeCustomLyricsEditor();
       lyricsSessionCache.clear();
       wordsSessionCache.clear();
@@ -6758,6 +6950,33 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (el.btnCloseCustomLyrics) el.btnCloseCustomLyrics.addEventListener('click', closeCustomLyricsEditor);
   if (el.btnCancelCustomLyrics) el.btnCancelCustomLyrics.addEventListener('click', closeCustomLyricsEditor);
   if (el.btnSaveCustomLyrics) el.btnSaveCustomLyrics.addEventListener('click', saveCustomLyrics);
+  const btnResetCustomLyrics = document.getElementById('btn-reset-custom-lyrics');
+  if (btnResetCustomLyrics) {
+    btnResetCustomLyrics.addEventListener('click', async () => {
+      const track = state.currentTrack;
+      if (!track || !state.isCustomLyrics) return;
+      btnResetCustomLyrics.disabled = true;
+      try {
+        const query = `title=${encodeURIComponent(track.title || '')}&artist=${encodeURIComponent(track.artist || '')}`;
+        const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/save-custom-lyrics?${query}`, { method: 'DELETE' });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data.success) throw new Error(data.error || 'Could not reset lyrics.');
+        lyricsSessionCache.clear();
+        wordsSessionCache.clear();
+        state.lastActiveLyricIdx = -1;
+        state.forceLyricsScroll = true;
+        state.forceSnapLyrics = true;
+        state.syncedLyrics = [];
+        closeCustomLyricsEditor();
+        await loadSyncedLyrics(track.title || '', track.artist || '', state.loadToken);
+        showToast('Custom lyrics reset', 'success');
+      } catch (error) {
+        showToast(error.message || 'Could not reset lyrics.', 'error');
+      } finally {
+        btnResetCustomLyrics.disabled = false;
+      }
+    });
+  }
 
   if (el.customLyricsModal) {
     el.customLyricsModal.addEventListener('click', (e) => {
@@ -7040,6 +7259,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     if (el.nativeAudio) {
+      if (frozenCurTime > 0 && el.nativeAudio.currentTime === 0 && Number.isFinite(frozenCurTime)) {
+        try {
+          el.nativeAudio.currentTime = frozenCurTime;
+        } catch (_) {}
+      }
+      frozenCurTime = 0;
       try {
         const playPromise = el.nativeAudio.play();
         if (playPromise && typeof playPromise.catch === 'function') {
@@ -7171,7 +7396,38 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
         return;
       }
-      nextIdx = 0;
+      if (state._isNaturalEnding && !state.isRepeat) {
+        state.isPlaying = false;
+        updatePlayPauseButton(false, false);
+        return;
+      }
+      if (state.queue.length <= 1) {
+        let candidates = (state.searchResults && state.searchResults.length > 1) ? state.searchResults : [];
+        if (!candidates.length && Array.isArray(state.history)) candidates = state.history;
+        if (!candidates.length) {
+          const trCache = safeJson('lumo_trending_cache', null);
+          if (trCache && Array.isArray(trCache.tracks)) candidates = trCache.tracks;
+        }
+        const otherTracks = candidates.filter(t => !isSameTrack(t, state.currentTrack));
+        if (otherTracks.length > 0) {
+          state.queue.push(...otherTracks.slice(0, 10));
+          updateQueueBadge();
+          nextIdx = state.queueIndex + 1;
+        } else if (state._isNaturalEnding && !state.isRepeat) {
+          state.isPlaying = false;
+          updatePlayPauseButton(false, false);
+          return;
+        } else if (!state.isRepeat && state.repeatMode !== 'all' && state.repeatMode !== 'one') {
+          showToast('End of queue', 'info');
+          return;
+        }
+      } else if (!state._isNaturalEnding && !state.isRepeat && state.repeatMode !== 'all' && state.repeatMode !== 'one') {
+        showToast('End of queue', 'info');
+        return;
+      }
+      if (nextIdx >= state.queue.length) {
+        nextIdx = 0;
+      }
     }
     state.queueIndex = nextIdx;
     recordPlayedIndex(nextIdx);
@@ -7188,36 +7444,44 @@ document.addEventListener('DOMContentLoaded', async () => {
       el.nativeAudio.currentTime = 0;
       return;
     }
-    {
-      const h = state.playHistory || [];
-      if (h.length) {
-        const prev = h.pop();
-        navigatingBack = true;
-        try { playTrack(prev); } finally { navigatingBack = false; }
-        const prevIdx = state.queue.findIndex(t => t.id === prev.id || isSameTrack(t, prev));
-        if (prevIdx !== -1) state.queueIndex = prevIdx;
-        return;
-      }
+    if (state.queue && state.queue.length > 1 && state.queueIndex > 0) {
+      const prevIdx = state.queueIndex - 1;
+      state.queueIndex = prevIdx;
+      playTrack(state.queue[prevIdx]);
+      return;
+    }
+    const h = state.playHistory || [];
+    if (h.length) {
+      const prev = h.pop();
+      navigatingBack = true;
+      try { playTrack(prev); } finally { navigatingBack = false; }
+      const prevIdx = state.queue.findIndex(t => t.id === prev.id || isSameTrack(t, prev));
+      if (prevIdx !== -1) state.queueIndex = prevIdx;
+      return;
     }
     if (state.queue.length === 0) return;
-
-    const h = state.queueHistory;
-    if (h.length > 1) {
-      h.pop();
-      const prevIdx = h[h.length - 1];
-      if (prevIdx >= 0 && prevIdx < state.queue.length) {
-        state.queueIndex = prevIdx;
-        playTrack(state.queue[prevIdx]);
-        return;
+    if (state.queue.length > 1) {
+      let prevIdx = state.queueIndex - 1;
+      if (prevIdx < 0) {
+        if (state.repeatMode === 'all') {
+          prevIdx = state.queue.length - 1;
+        } else {
+          showToast('Start of queue', 'info');
+          return;
+        }
       }
-      h.push(state.queueIndex);
+      state.queueIndex = prevIdx;
+      state.queueHistory = [prevIdx];
+      playTrack(state.queue[prevIdx]);
+    } else {
+      if (el.nativeAudio) {
+        if (el.nativeAudio.currentTime > 2) {
+          el.nativeAudio.currentTime = 0;
+        } else {
+          showToast('Start of queue', 'info');
+        }
+      }
     }
-
-    let prevIdx = state.queueIndex - 1;
-    if (prevIdx < 0) prevIdx = state.queue.length - 1;
-    state.queueIndex = prevIdx;
-    state.queueHistory = [prevIdx];
-    playTrack(state.queue[prevIdx]);
   }
 
   if (el.nativeAudio) {
@@ -7240,9 +7504,80 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     el.nativeAudio.addEventListener('error', () => {
+      if (state.playbackLoadTimeout) { clearTimeout(state.playbackLoadTimeout); state.playbackLoadTimeout = null; }
       if (el.trackLoadingOverlay) el.trackLoadingOverlay.classList.add('hidden');
+      state.isPlaying = false;
+      document.body.classList.remove('is-playing');
+      updatePlayPauseButton(false, false);
       if (state.currentTrack && state.currentTrack.platform === 'local') {
         showToast('File missing from library');
+      } else if (state.currentTrack) {
+        const track = state.currentTrack;
+        const loadToken = state.loadToken;
+        const isSoundCloud = track.platform === 'soundcloud' || /soundcloud\.com/i.test(String(track.url || ''));
+        if (isSoundCloud && state._scFallbackAttemptToken !== loadToken && navigator.onLine) {
+          state._scFallbackAttemptToken = loadToken;
+          showToast('SoundCloud stream unavailable; searching for a playable version…', 'info');
+          state.playbackLoadTimeout = setTimeout(() => {
+            if (loadToken !== state.loadToken) return;
+            state.playbackLoadTimeout = null;
+            if (el.trackLoadingOverlay) el.trackLoadingOverlay.classList.add('hidden');
+            showToast('Could not find a playable version of this track.', 'error');
+          }, 30000);
+          (async () => {
+            const signal = state.currentAbortController?.signal;
+            const queries = [...new Set([
+              `${track.title || ''} ${track.artist || ''}`.trim(),
+              String(track.title || '').trim()
+            ].filter(Boolean))];
+            for (const query of queries) {
+              if (loadToken !== state.loadToken || signal?.aborted) return;
+              const searchRes = await fetch(`http://127.0.0.1:${state.serverPort}/api/search?q=${encodeURIComponent(query)}&platform=youtube&limit=5`, { signal });
+              const searchData = await searchRes.json();
+              const candidates = Array.isArray(searchData.tracks) ? searchData.tracks.slice(0, 3) : [];
+              for (const candidate of candidates) {
+                if (loadToken !== state.loadToken || signal?.aborted) return;
+                const fallbackUrl = candidate.url || (candidate.id ? `https://www.youtube.com/watch?v=${encodeURIComponent(candidate.id)}` : '');
+                if (!fallbackUrl) continue;
+                const params = new URLSearchParams({
+                  url: fallbackUrl, id: candidate.id || '', platform: 'youtube',
+                  title: candidate.title || track.title || '', artist: candidate.artist || track.artist || '',
+                  duration: String(candidate.duration || track.duration || 0), thumbnail: candidate.thumbnail || track.thumbnail || ''
+                });
+                const streamRes = await fetch(`http://127.0.0.1:${state.serverPort}/api/stream-info?${params}`, { signal });
+                const streamData = await streamRes.json();
+                if (!streamData?.success || !streamData.streamUrl || loadToken !== state.loadToken) continue;
+                if (state.playbackLoadTimeout) { clearTimeout(state.playbackLoadTimeout); state.playbackLoadTimeout = null; }
+                if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
+                if (streamData.isHls && window.Hls && Hls.isSupported()) {
+                  hlsInstance = new Hls({ enableWorker: true, lowLatencyMode: true });
+                  hlsInstance.loadSource(streamData.streamUrl);
+                  hlsInstance.attachMedia(el.nativeAudio);
+                  hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => { if (loadToken === state.loadToken) playSmooth(); });
+                } else {
+                  el.nativeAudio.src = streamData.isLocal ? streamData.streamUrl : (streamData.proxyUrl || streamData.streamUrl);
+                  playSmooth();
+                }
+                showToast('Playing a matching YouTube version.', 'info');
+                applyAudioSettings();
+                return;
+              }
+            }
+            if (loadToken === state.loadToken) {
+              if (state.playbackLoadTimeout) { clearTimeout(state.playbackLoadTimeout); state.playbackLoadTimeout = null; }
+              if (el.trackLoadingOverlay) el.trackLoadingOverlay.classList.add('hidden');
+              showToast('Could not find a playable version of this track.', 'error');
+            }
+          })().catch(error => {
+            if (error?.name === 'AbortError' || loadToken !== state.loadToken) return;
+            if (state.playbackLoadTimeout) { clearTimeout(state.playbackLoadTimeout); state.playbackLoadTimeout = null; }
+            if (el.trackLoadingOverlay) el.trackLoadingOverlay.classList.add('hidden');
+            console.warn('SoundCloud playback fallback failed:', error.message || error);
+            showToast('SoundCloud and YouTube playback both failed for this track.', 'error');
+          });
+          return;
+        }
+        showToast('This track could not be played. Try another source or retry.', 'error');
       }
     });
 
@@ -7264,6 +7599,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     el.nativeAudio.addEventListener('playing', () => {
+      if (state.playbackLoadTimeout) { clearTimeout(state.playbackLoadTimeout); state.playbackLoadTimeout = null; }
       state.isPlaying = true;
       document.body.classList.add('is-playing');
       updatePlayPauseButton(true, false);
@@ -7288,6 +7624,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const d = formatDuration(getReliableTrackDuration());
       if (el.timeDuration) el.timeDuration.textContent = d;
       if (el.tvkTimeDuration) el.tvkTimeDuration.textContent = d;
+      if (state.currentTrack && state.isPlaying) sendDiscordRpcUpdate(state.currentTrack, true);
     });
 
     el.nativeAudio.addEventListener('play', () => {
@@ -7327,7 +7664,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       if (crossfadeFadeInPending) {
         crossfadeFadeInPending = false;
-        const X = parseInt(localStorage.getItem('riff_crossfade') || '0', 10);
+        const X = parseInt(localStorage.getItem('lumo_crossfade') || '0', 10);
         if (X > 0 && audioEngine) audioEngine.fadeIn(X / 2);
       }
       if (typeof m3cStart === 'function') m3cStart();
@@ -7378,7 +7715,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         pauseSmooth();
         return;
       }
-      if (state.isRepeat) {
+      if (state.repeatMode === 'one') {
         el.nativeAudio.currentTime = 0;
         playSmooth();
       } else {
@@ -7422,14 +7759,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (el.timeDuration) el.timeDuration.textContent = formatDuration(getReliableTrackDuration());
         if (el.tvkTimeDuration) el.tvkTimeDuration.textContent = formatDuration(getReliableTrackDuration());
       }
+      if (state.currentTrack && state.isPlaying) sendDiscordRpcUpdate(state.currentTrack, true);
       updateMediaPositionState();
     });
 
     el.nativeAudio.addEventListener('seeked', () => {
+      // Keep the paused resume position in sync with manual seeks. Otherwise
+      // playSmooth() can restore the position captured when pause was pressed.
+      if (!state.isPlaying && Number.isFinite(el.nativeAudio.currentTime)) {
+        frozenCurTime = el.nativeAudio.currentTime;
+      }
       updateMediaPositionState();
       state.forceLyricsScroll = true;
       state.forceSnapLyrics = true;
       state.lastActiveLyricIdx = -1;
+      if (state.currentTrack && state.isPlaying) sendDiscordRpcUpdate(state.currentTrack, true);
       if (state.isRightPanelOpen || state.isTvKaraokeOpen) {
         updateSyncedLyricsHighlight(el.nativeAudio.currentTime || 0);
       }
@@ -7444,7 +7788,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           if (activeTrim.start > 0 && el.nativeAudio.currentTime < activeTrim.start - 0.25) {
             el.nativeAudio.currentTime = activeTrim.start;
           } else if (activeTrim.end > activeTrim.start && el.nativeAudio.currentTime >= activeTrim.end) {
-            if (state.isRepeat) {
+            if (state.repeatMode === 'one') {
               el.nativeAudio.currentTime = activeTrim.start;
               playSmooth();
             } else {
@@ -7459,7 +7803,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const cur = (el.nativeAudio && Number.isFinite(el.nativeAudio.currentTime)) ? el.nativeAudio.currentTime : 0;
       const dur = getReliableTrackDuration();
 
-      const X = parseInt(localStorage.getItem('riff_crossfade') || '0', 10);
+      const X = parseInt(localStorage.getItem('lumo_crossfade') || '0', 10);
       if (X > 0 && !crossfadeTriggered && !state.isRepeat && dur > Math.max(X * 3, 30) && (!hlsInstance || dur >= (state.currentTrack?.duration || 0) * 0.9) && cur >= dur - X && (!audioEngine || !audioEngine.isLiveStream(el.nativeAudio))) {
         crossfadeTriggered = true;
         crossfadeFadeInPending = true;
@@ -7501,12 +7845,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   let isDraggingScrubber = false;
+  let isHoveringScrubber = false;
 
   function updateScrubberPositionFromEvent(e) {
     if (!el.scrubberTrack) return 0;
     const rect = el.scrubberTrack.getBoundingClientRect();
-    const padLeft = 5.5;
-    const trackWidth = rect.width - 2 * padLeft;
+    const padLeft = 6;
+    const padRight = 6;
+    const trackWidth = rect.width - padLeft - padRight;
     let pos = trackWidth > 0 ? (e.clientX - rect.left - padLeft) / trackWidth : 0;
     pos = Math.max(0, Math.min(1, pos));
     const dur = (el.nativeAudio && Number.isFinite(el.nativeAudio.duration) && el.nativeAudio.duration > 0)
@@ -7515,23 +7861,42 @@ document.addEventListener('DOMContentLoaded', async () => {
     const targetTime = pos * dur;
 
     state.scrubberDragTargetTime = targetTime;
+    scrubProgress = pos;
     if (el.timeCurrent) el.timeCurrent.textContent = formatDuration(targetTime);
     return targetTime;
   }
 
   if (el.scrubberTrack) {
+    el.scrubberTrack.addEventListener('mouseenter', () => {
+      isHoveringScrubber = true;
+      hasDrawnPausedFrame = false;
+      if (!animationFrameId && typeof startVisualizers === 'function') startVisualizers();
+    });
+    el.scrubberTrack.addEventListener('mouseleave', () => {
+      isHoveringScrubber = false;
+      hasDrawnPausedFrame = false;
+      if (!animationFrameId && typeof startVisualizers === 'function') startVisualizers();
+    });
     el.scrubberTrack.addEventListener('mousedown', (e) => {
       isDraggingScrubber = true;
       hasDrawnPausedFrame = false;
-      if (!animationFrameId) startVisualizers();
+      if (!animationFrameId && typeof startVisualizers === 'function') startVisualizers();
       el.scrubberTrack.classList.add('dragging');
-      updateScrubberPositionFromEvent(e);
+      const targetTime = updateScrubberPositionFromEvent(e);
+      if (!isNaN(targetTime) && el.nativeAudio) {
+        el.nativeAudio.currentTime = targetTime;
+      }
     });
   }
 
   window.addEventListener('mousemove', (e) => {
     if (!isDraggingScrubber) return;
-    updateScrubberPositionFromEvent(e);
+    const targetTime = updateScrubberPositionFromEvent(e);
+    if (!isNaN(targetTime) && el.nativeAudio && !state.isPlaying) {
+      el.nativeAudio.currentTime = targetTime;
+    }
+    hasDrawnPausedFrame = false;
+    if (!animationFrameId && typeof startVisualizers === 'function') startVisualizers();
   });
 
   window.addEventListener('mouseup', (e) => {
@@ -7541,9 +7906,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const targetTime = updateScrubberPositionFromEvent(e);
     if (!isNaN(targetTime) && el.nativeAudio) {
       el.nativeAudio.currentTime = targetTime;
+      if (!state.isPlaying) frozenCurTime = targetTime;
       updateMediaPositionState();
     }
     state.scrubberDragTargetTime = undefined;
+    hasDrawnPausedFrame = false;
+    if (!animationFrameId && typeof startVisualizers === 'function') startVisualizers();
   });
 
   let playbarTimelineTimer = null;
@@ -7679,7 +8047,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     initAudioContext();
     renderPresets();
     if (activeTweenRaf) { cancelAnimationFrame(activeTweenRaf); activeTweenRaf = null; }
-    if (localStorage.getItem('riff_smooth_presets') === 'false') {
+    if (localStorage.getItem('lumo_smooth_presets') === 'false') {
       state.audioSettings = { ...normalized.settings };
       syncSettingsSlidersToState();
       applyAudioSettings();
@@ -7707,7 +8075,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     };
     state.customPresets.push(newPreset);
     state.activePresetId = newPreset.id;
-    localStorage.setItem('devsize_custom_presets', JSON.stringify(state.customPresets));
+    localStorage.setItem('lumo_custom_presets', JSON.stringify(state.customPresets));
     renderPresets();
     persistSoundSettings();
   }
@@ -7724,7 +8092,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const p = state.customPresets.find(x => x.id === id);
     if (p) {
       p.name = newName.trim();
-      localStorage.setItem('devsize_custom_presets', JSON.stringify(state.customPresets));
+      localStorage.setItem('lumo_custom_presets', JSON.stringify(state.customPresets));
       renderPresets();
     }
   }
@@ -7732,7 +8100,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   function deleteCustomPreset(id) {
     state.customPresets = state.customPresets.filter(p => p.id !== id);
     if (state.activePresetId === id) state.activePresetId = 'p_default';
-    localStorage.setItem('devsize_custom_presets', JSON.stringify(state.customPresets));
+    localStorage.setItem('lumo_custom_presets', JSON.stringify(state.customPresets));
     renderPresets();
     persistSoundSettings();
   }
@@ -7894,6 +8262,16 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function playAlbumFrom(album, tracks, startIndex = 0) {
     if (!album || !tracks || !tracks.length) return;
+    const isCurrentAlbumTrack = !!(state.currentTrack && tracks.some(t => isSameTrack(t, state.currentTrack)));
+    if (isCurrentAlbumTrack && el.nativeAudio && el.nativeAudio.src) {
+      if (state.isPlaying) {
+        pauseSmooth();
+      } else {
+        playSmooth();
+      }
+      if (typeof updateAlbumPlayButtonState === 'function') updateAlbumPlayButtonState();
+      return;
+    }
     const runId = ++currentAlbumPlayRunId;
 
     if (isEpisodeAlbum(tracks)) {
@@ -7958,7 +8336,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function getMixFeedback() {
     const defaultVal = { likedArtists: [], dislikedArtists: [], likedTracks: [], dislikedTracks: [], ratingsByMix: {} };
-    const val = safeJson('riff_mix_feedback', defaultVal);
+    const val = safeJson('lumo_mix_feedback', defaultVal);
     if (!val || typeof val !== 'object') return defaultVal;
     if (!Array.isArray(val.likedArtists)) val.likedArtists = [];
     if (!Array.isArray(val.dislikedArtists)) val.dislikedArtists = [];
@@ -7969,7 +8347,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function saveMixFeedback(data) {
-    localStorage.setItem('riff_mix_feedback', JSON.stringify(data));
+    localStorage.setItem('lumo_mix_feedback', JSON.stringify(data));
   }
 
   function handleDailyMixRating(isLike) {
@@ -8033,7 +8411,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     saveMixFeedback(feedback);
 
-    showToast(isLike ? 'Glad you like this mix!' : 'Feedback saved', 'info');
+    showToastNow(isLike ? 'Glad you like this mix!' : 'Feedback saved', 'info');
 
     setTimeout(() => {
       if (mixFeedbackEl) {
@@ -8057,7 +8435,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function getSavedAlbums() {
     try {
-      const raw = localStorage.getItem('riff_saved_albums');
+      const raw = localStorage.getItem('lumo_saved_albums');
       const parsed = raw ? JSON.parse(raw) : [];
       return Array.isArray(parsed) ? parsed : [];
     } catch (_) {
@@ -8067,7 +8445,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function setSavedAlbums(list) {
     try {
-      localStorage.setItem('riff_saved_albums', JSON.stringify(list));
+      localStorage.setItem('lumo_saved_albums', JSON.stringify(list));
     } catch (_) {}
     updateAlbumsCount();
   }
@@ -8287,8 +8665,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       const playAlbumBtn = document.getElementById('btn-play-album');
       if (playAlbumBtn) {
         playAlbumBtn.disabled = false;
-        playAlbumBtn.onclick = () => playAlbumFrom(album, tracks, 0);
+        playAlbumBtn.onclick = () => { playAlbumFrom(album, tracks, 0); updateAlbumPlayButtonState(); };
       }
+      updateAlbumPlayButtonState();
 
       if (listEl) {
         listEl.innerHTML = '';
@@ -8566,13 +8945,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       state.searchResults = data.tracks;
+      state.searchHasMore = data.tracks.length >= 20;
+      state.searchIsLoadingMore = false;
+      state.searchAutoLoading = false;
+
+      const isDirectInput = /^https?:\/\/(?:www\.|music\.)?(?:youtube\.com|youtu\.be|soundcloud\.com)\//i.test(trimmedQuery);
+      if ((data.isDirectUrl || isDirectInput) && Array.isArray(data.tracks) && data.tracks.length > 0) {
+        playTrack(data.tracks[0], data.tracks);
+      }
 
       requestAnimationFrame(() => {
         if (el.searchTracksList) renderTracks(el.searchTracksList, data.tracks, 'search');
       });
 
-      const showArtists = localStorage.getItem('riff_search_artists') !== '0';
-      const trimmedQuery = query.trim();
+      const showArtists = localStorage.getItem('lumo_search_artists') !== '0';
       if (showArtists && trimmedQuery.length >= 3) {
         fetchArtistCardForSearch(trimmedQuery, searchToken, data.tracks);
       }
@@ -8581,6 +8967,42 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.error('Search error:', err);
       const isOff = !navigator.onLine;
       if (el.searchTracksList) el.searchTracksList.innerHTML = `<div class="empty-hint">${isOff ? 'Offline: connect to the internet to search new tracks' : 'Error fetching results: ' + escapeHtml(err.message)}</div>`;
+    }
+  }
+
+  async function loadMoreSearchResults() {
+    if (state.searchIsLoadingMore || !state.searchHasMore || !state.searchQuery) return;
+    state.searchIsLoadingMore = true;
+    const moreBtn = document.getElementById('btn-search-load-more');
+    if (moreBtn) moreBtn.textContent = 'Loading…';
+    try {
+      const offset = (state.searchResults || []).length;
+      const searchUrl = `http://127.0.0.1:${state.serverPort}/api/search?q=${encodeURIComponent(state.searchQuery)}&platform=${state.platform}&limit=20&offset=${offset}`;
+      const res = await fetch(searchUrl);
+      const data = await res.json();
+      if (data.success && Array.isArray(data.tracks) && data.tracks.length > 0) {
+        const seen = new Set((state.searchResults || []).map(t => (typeof getTrackCanonicalId === 'function' ? getTrackCanonicalId(t) : '') || t.id));
+        const newTracks = data.tracks.filter(t => !seen.has((typeof getTrackCanonicalId === 'function' ? getTrackCanonicalId(t) : '') || t.id));
+        if (newTracks.length > 0) {
+          state.searchResults = (state.searchResults || []).concat(newTracks);
+          if (el.searchTracksList) renderTracks(el.searchTracksList, state.searchResults, 'search');
+          state.searchHasMore = data.tracks.length >= 10;
+        } else {
+          state.searchHasMore = false;
+        }
+      } else {
+        state.searchHasMore = false;
+      }
+    } catch (e) {
+      console.error('Error loading more tracks:', e);
+    } finally {
+      state.searchIsLoadingMore = false;
+      if (!state.searchHasMore) {
+        const container = document.getElementById('search-load-more-wrap');
+        if (container) container.remove();
+      } else if (moreBtn) {
+        moreBtn.textContent = 'Show More';
+      }
     }
   }
 
@@ -8717,6 +9139,193 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateMultiSelectBar();
   }
 
+  function getTrackReposts() {
+    try {
+      const raw = JSON.parse(localStorage.getItem('lumo_reposted_tracks') || '[]');
+      return Array.isArray(raw) ? raw.filter(item => item && typeof item === 'object') : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function saveTrackReposts(list) {
+    try {
+      localStorage.setItem('lumo_reposted_tracks', JSON.stringify(list || []));
+    } catch (e) {}
+  }
+
+  function isTrackReposted(track) {
+    if (!track) return false;
+    const list = getTrackReposts();
+    return list.some(t => isSameTrack(t, track));
+  }
+
+  function getPlaylistReposts() {
+    try {
+      const raw = JSON.parse(localStorage.getItem('lumo_reposted_playlists') || '[]');
+      return Array.isArray(raw) ? raw.filter(item => item && typeof item === 'object' && item.id != null) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function savePlaylistReposts(list) {
+    try {
+      localStorage.setItem('lumo_reposted_playlists', JSON.stringify(list || []));
+    } catch (e) {}
+  }
+
+  function isPlaylistReposted(plId) {
+    if (!plId) return false;
+    const list = getPlaylistReposts();
+    return list.some(p => String(p.id) === String(plId));
+  }
+
+  function getRepostCount(id) {
+    try {
+      const map = JSON.parse(localStorage.getItem('lumo_repost_counts') || '{}');
+      if (map[id] !== undefined) return map[id];
+      let hash = 0;
+      const str = String(id || 'riff');
+      for (let i = 0; i < str.length; i++) hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+      const count = Math.abs(hash % 38) + 5;
+      map[id] = count;
+      localStorage.setItem('lumo_repost_counts', JSON.stringify(map));
+      return count;
+    } catch (e) {
+      return 14;
+    }
+  }
+
+  function setRepostCount(id, count) {
+    try {
+      const map = JSON.parse(localStorage.getItem('lumo_repost_counts') || '{}');
+      map[id] = count;
+      localStorage.setItem('lumo_repost_counts', JSON.stringify(map));
+    } catch (e) {}
+  }
+
+  function toggleTrackRepost(track) {
+    if (!track) return false;
+    const list = getTrackReposts();
+    const idx = list.findIndex(t => isSameTrack(t, track));
+    let reposted = false;
+    const trackId = getTrackCanonicalId(track);
+    let count = getRepostCount(trackId);
+    if (idx !== -1) {
+      list.splice(idx, 1);
+      reposted = false;
+      count = Math.max(0, count - 1);
+      showToastNow(`Removed repost: ${track.title || 'Track'}`, 'info');
+    } else {
+      list.unshift({
+        ...track,
+        repostedAt: Date.now()
+      });
+      reposted = true;
+      count += 1;
+      showToastNow(`Reposted: ${track.title || 'Track'}`, 'success');
+    }
+    setRepostCount(trackId, count);
+    saveTrackReposts(list);
+    if (typeof updateProfileStatsIfOpen === 'function') updateProfileStatsIfOpen();
+    return reposted;
+  }
+
+  function togglePlaylistRepost(playlist) {
+    if (!playlist) return false;
+    const list = getPlaylistReposts();
+    const idx = list.findIndex(p => String(p.id) === String(playlist.id));
+    let reposted = false;
+    let count = getRepostCount(playlist.id);
+    if (idx !== -1) {
+      list.splice(idx, 1);
+      reposted = false;
+      count = Math.max(0, count - 1);
+      showToastNow(`Removed playlist repost: ${playlist.name || 'Playlist'}`, 'info');
+    } else {
+      list.unshift({
+        id: playlist.id,
+        name: playlist.name,
+        description: playlist.description,
+        cover: playlist.cover,
+        trackCount: (playlist.tracks || []).length,
+        repostedAt: Date.now()
+      });
+      reposted = true;
+      count += 1;
+      showToastNow(`Reposted playlist: ${playlist.name || 'Playlist'}`, 'success');
+    }
+    setRepostCount(playlist.id, count);
+    savePlaylistReposts(list);
+    if (typeof updateProfileStatsIfOpen === 'function') updateProfileStatsIfOpen();
+    return reposted;
+  }
+
+  function getFavoritePlaylists() {
+    try {
+      const stored = JSON.parse(localStorage.getItem('lumo_favorite_playlists') || '[]');
+      return Array.isArray(stored) ? stored.filter(item => item && typeof item === 'object' && item.id != null) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function isPlaylistFavorited(id) {
+    if (!id) return false;
+    const list = getFavoritePlaylists();
+    return list.some(p => String(p.id) === String(id));
+  }
+
+  function togglePlaylistFavorite(playlist) {
+    if (!playlist) return false;
+    const list = getFavoritePlaylists();
+    const idx = list.findIndex(p => String(p.id) === String(playlist.id));
+    let favorited = false;
+    if (idx !== -1) {
+      list.splice(idx, 1);
+      favorited = false;
+      showToastNow(`Removed playlist from favorites: ${playlist.name || 'Playlist'}`, 'info');
+    } else {
+      list.unshift({
+        id: playlist.id,
+        name: playlist.name,
+        description: playlist.description,
+        cover: playlist.cover || (playlist.tracks && playlist.tracks[0] ? (typeof getTrackThumbUrl === 'function' ? getTrackThumbUrl(playlist.tracks[0]) : (playlist.tracks[0].thumbnail || '')) : ''),
+        trackCount: (playlist.tracks || []).length,
+        tracks: playlist.tracks || [],
+        favoritedAt: Date.now()
+      });
+      favorited = true;
+      showToastNow(`Favorited playlist: ${playlist.name || 'Playlist'}`, 'success');
+    }
+    try {
+      localStorage.setItem('lumo_favorite_playlists', JSON.stringify(list));
+    } catch (_) {}
+    return favorited;
+  }
+
+  function updatePlaylistFavHeartState() {
+    const btn = document.getElementById('btn-fav-all-playlist');
+    if (!btn) return;
+    const pl = state.playlists.find(p => p.id === state.currentPlaylistId);
+    if (!pl) {
+      btn.classList.remove('active', 'favorited');
+      const svg = btn.querySelector('svg');
+      if (svg) { svg.setAttribute('fill', 'none'); svg.style.fill = 'none'; svg.style.stroke = 'currentColor'; }
+      return;
+    }
+    const isFav = isPlaylistFavorited(pl.id);
+    btn.classList.toggle('active', isFav);
+    btn.classList.toggle('favorited', isFav);
+    const svg = btn.querySelector('svg');
+    if (svg) {
+      svg.setAttribute('fill', isFav ? '#ff3b5c' : 'none');
+      svg.style.fill = isFav ? '#ff3b5c' : 'none';
+      svg.style.stroke = isFav ? '#ff3b5c' : 'currentColor';
+    }
+  }
+
   function multiSelectSourceTracks() {
     if (multiSel.context === 'favorites') return state.favorites;
     const pl = state.playlists.find(p => p.id === state.currentPlaylistId);
@@ -8775,31 +9384,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       </div>
       <span class="track-row-duration">${formatDuration(track.duration)}</span>
       <div class="track-row-actions">
-      <button class="btn-icon-pill riff-share-action-btn btn-row-share" title="Copy share link" aria-label="Copy share link">
-      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 14 20 9 15 4"></polyline><path d="M4 20v-7a4 4 0 0 1 4-4h12"></path></svg>
-      </button>
-      <button class="btn-icon-pill btn-row-fav" title="favorite">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="${isFav ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path></svg>
-      </button>
-      <button class="btn-icon-pill btn-row-art" title="Customize cover & banner">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
-      </button>
-      <button class="btn-icon-pill btn-row-add-playlist" title="add to playlist">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-      </button>
-      ${track.platform === 'local' ? `
-      <button class="btn-icon-pill btn-row-remove-local delete-btn" title="Remove from library">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
-      </button>` : `
-      <button class="btn-icon-pill btn-row-more" title="download & options">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="2"></circle><circle cx="19" cy="12" r="2"></circle><circle cx="5" cy="12" r="2"></circle></svg>
-      </button>`}
-      ${context === 'playlist' ? `
-        <button class="btn-icon-pill btn-row-remove-playlist delete-btn" title="remove from playlist">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-        </button>` : ''}
-        </div>
-        `;
+        <button class="btn-icon-pill btn-row-fav" title="${isFav ? 'Remove from favorites' : 'Add to favorites'}" aria-label="Favorite">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="${isFav ? '#ff3b5c' : 'none'}" stroke="${isFav ? '#ff3b5c' : 'currentColor'}" stroke-width="2"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path></svg>
+        </button>
+        <button class="btn-icon-pill btn-row-dots" title="More options" aria-label="More options">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="2"></circle><circle cx="19" cy="12" r="2"></circle><circle cx="5" cy="12" r="2"></circle></svg>
+        </button>
+      </div>
+      `;
 
         const artistEl = row.querySelector('.track-row-artist');
         if (artistEl) renderClickableArtists(artistEl, track.artist);
@@ -8838,6 +9430,14 @@ document.addEventListener('DOMContentLoaded', async () => {
             openArtistProfile(track.artist);
             return;
           }
+          if (state.currentTrack && isSameTrack(state.currentTrack, track) && el.nativeAudio && el.nativeAudio.src) {
+            if (state.isPlaying) {
+              pauseSmooth();
+            } else {
+              playSmooth();
+            }
+            return;
+          }
           if (context === 'search') {
             state.isRadioQueue = false;
             state.queue = [...tracks];
@@ -8865,14 +9465,6 @@ document.addEventListener('DOMContentLoaded', async () => {
           playTrack(track, currentList, clickIndex >= 0 ? clickIndex : idx, context);
         });
 
-        const btnShare = row.querySelector('.btn-row-share');
-        if (btnShare) {
-          btnShare.addEventListener('click', (e) => {
-            e.stopPropagation();
-            executeCopyShareLink(track);
-          });
-        }
-
         const btnFav = row.querySelector('.btn-row-fav');
         if (btnFav) {
           btnFav.addEventListener('click', (e) => {
@@ -8880,78 +9472,23 @@ document.addEventListener('DOMContentLoaded', async () => {
             toggleFavoriteTrack(track);
             const isFavNow = state.favorites.some(f => isSameTrack(f, track));
             const svg = btnFav.querySelector('svg');
-            if (svg) svg.setAttribute('fill', isFavNow ? 'currentColor' : 'none');
-          });
-        }
-
-        const btnArt = row.querySelector('.btn-row-art');
-        if (btnArt) {
-          btnArt.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openTrackArtModal(track, btnArt);
-          });
-        }
-
-        const btnMore = row.querySelector('.btn-row-more');
-        if (btnMore) {
-          btnMore.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openDownloadModal(track);
-          });
-        }
-
-        const btnAddPl = row.querySelector('.btn-row-add-playlist');
-        if (btnAddPl) {
-          btnAddPl.addEventListener('click', (e) => {
-            e.stopPropagation();
-            openAddToPlaylistModal(track);
-          });
-        }
-
-        const btnRemPl = row.querySelector('.btn-row-remove-playlist');
-        if (btnRemPl) {
-          btnRemPl.addEventListener('click', (e) => {
-            e.stopPropagation();
-            removeTrackFromCurrentPlaylist(track.id);
-          });
-        }
-
-        const btnRemLocal = row.querySelector('.btn-row-remove-local');
-        if (btnRemLocal) {
-          btnRemLocal.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            try {
-              await fetch(`http://127.0.0.1:${state.serverPort}/api/library-remove`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ id: track.id })
-              });
-              if (Array.isArray(state.localTracks)) {
-                state.localTracks = state.localTracks.filter(t => t.id !== track.id);
-              }
-              if (Array.isArray(tracks)) {
-                const tIdx = tracks.findIndex(t => isSameTrack(t, track));
-                if (tIdx !== -1) tracks.splice(tIdx, 1);
-              }
-              updateLocalBadge();
-              row.remove();
-              if (state.currentView === 'local') {
-                if (!state.localTracks || state.localTracks.length === 0) {
-                  renderLocalView();
-                } else if (el.localSubtitle) {
-                  const query = el.localSearchInput ? el.localSearchInput.value.trim().toLowerCase() : '';
-                  el.localSubtitle.textContent = query
-                    ? `${tracks.length} of ${state.localTracks.length} tracks`
-                    : `${state.localTracks.length} tracks in library`;
-                }
-              }
-              showToast('Removed from library');
-            } catch (err) {
-              console.warn('Remove local track error:', err);
+            if (svg) {
+              svg.setAttribute('fill', isFavNow ? '#ff3b5c' : 'none');
+              svg.setAttribute('stroke', isFavNow ? '#ff3b5c' : 'currentColor');
             }
+            btnFav.title = isFavNow ? 'Remove from favorites' : 'Add to favorites';
+            if (typeof updatePlaylistFavHeartState === 'function') updatePlaylistFavHeartState();
           });
         }
-        
+
+        const btnDots = row.querySelector('.btn-row-dots');
+        if (btnDots) {
+          btnDots.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openTrackContextMenu(e.clientX, e.clientY, track, context, row, btnDots);
+          });
+        }
+
       return row;
   }
 
@@ -8964,50 +9501,132 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  function openTrackContextMenu(x, y, track, context, row) {
-    closeTrackContextMenu();
-    const isFav = state.favorites.some(f => isSameTrack(f, track));
-    const items = [
-      { label: 'Play', run: () => row.click() },
-      { label: 'Play next', run: () => {
-        if (!state.queue.length || state.queueIndex < 0) { playTrack(track); return; }
-        state.queue = state.queue.filter((t, i) => i <= state.queueIndex || !isSameTrack(t, track));
-        state.queue.splice(state.queueIndex + 1, 0, track);
-        updateQueueBadge();
-        showToast('Playing next', 'success');
-      } },
-      { label: 'Add to queue', run: () => {
-        if (!state.queue.some(t => isSameTrack(t, track))) state.queue.push(track);
-        updateQueueBadge();
-        showToast('Added to queue', 'success');
-      } },
-      { label: 'Add to playlist…', run: () => openAddToPlaylistModal(track) },
-      { label: isFav ? 'Remove from favorites' : 'Add to favorites', run: () => {
-        toggleFavoriteTrack(track);
-        const on = state.favorites.some(f => isSameTrack(f, track));
-        const svg = row.querySelector('.btn-row-fav svg');
-        if (svg) svg.setAttribute('fill', on ? 'currentColor' : 'none');
-      } }
-    ];
-    if (track.artist && !/^unknown artist$/i.test(track.artist)) {
-      items.push({ label: 'Go to artist', run: () => openArtistProfile(track.artist) });
+  function openTrackContextMenu(x, y, track, context, row, triggerBtn = null) {
+    if (trackMenuEl && triggerBtn && trackMenuEl._triggerBtn === triggerBtn) {
+      closeTrackContextMenu();
+      return;
     }
-    if (track.platform !== 'local') {
-      items.push({ label: 'Download…', run: () => openDownloadModal(track) });
+    closeTrackContextMenu();
+    if (!track) return;
+
+    const isFav = state.favorites.some(f => isSameTrack(f, track));
+    const isRep = isTrackReposted(track);
+    const repCount = getRepostCount(getTrackCanonicalId(track));
+
+    const items = [];
+    if (row) {
+      items.push({
+        label: 'Play',
+        icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>',
+        run: () => row.click()
+      });
+    }
+    items.push({
+      label: 'Add to playlist…',
+      icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>',
+      run: () => openAddToPlaylistModal(track)
+    });
+    items.push({
+      label: isRep ? 'Remove repost' : 'Repost',
+      badge: `${repCount}`,
+      icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="${isRep ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>`,
+      run: () => toggleTrackRepost(track)
+    });
+    items.push({
+      label: isFav ? 'Remove from favorites' : 'Add to favorites',
+      icon: `<svg width="15" height="15" viewBox="0 0 24 24" fill="${isFav ? '#ff3b5c' : 'none'}" stroke="${isFav ? '#ff3b5c' : 'currentColor'}" stroke-width="2"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path></svg>`,
+      run: () => {
+        toggleFavoriteTrack(track);
+        if (row) {
+          const on = state.favorites.some(f => isSameTrack(f, track));
+          const svg = row.querySelector('.btn-row-fav svg');
+          if (svg) {
+            svg.setAttribute('fill', on ? '#ff3b5c' : 'none');
+            svg.setAttribute('stroke', on ? '#ff3b5c' : 'currentColor');
+          }
+        }
+        if (typeof updatePlaylistFavHeartState === 'function') updatePlaylistFavHeartState();
+      }
+    });
+    items.push({
+      label: 'Rename track…',
+      icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path></svg>',
+      run: () => openTrackRenameDialog(track)
+    });
+    items.push({
+      label: 'Copy link',
+      icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>',
+      run: () => executeCopyShareLink(track)
+    });
+    if (track.artist && !/^unknown artist$/i.test(track.artist)) {
+      items.push({
+        label: 'Go to artist',
+        icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>',
+        run: () => openArtistProfile(track.artist)
+      });
+    }
+    if (track.platform !== 'local' && triggerBtn !== el.btnPlaybarDots && context !== 'playbar') {
+      items.push({
+        label: 'Download / Offline…',
+        icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>',
+        run: () => openDownloadModal(track)
+      });
     }
     if (context === 'playlist') {
-      items.push({ label: 'Remove from playlist', danger: true, run: () => removeTrackFromCurrentPlaylist(track.id) });
+      items.push({
+        label: 'Remove from playlist',
+        icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>',
+        danger: true,
+        run: () => {
+          removeTrackFromCurrentPlaylist(track.id);
+          if (row) row.remove();
+        }
+      });
+    } else if (track.platform === 'local') {
+      items.push({
+        label: 'Remove from library',
+        icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>',
+        danger: true,
+        run: async () => {
+          try {
+            await fetch(`http://127.0.0.1:${state.serverPort}/api/library-remove`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: track.id })
+            });
+            if (Array.isArray(state.localTracks)) {
+              state.localTracks = state.localTracks.filter(t => t.id !== track.id);
+            }
+            if (row) row.remove();
+            updateLocalBadge();
+            showToast('Removed from library');
+          } catch (err) {
+            console.warn('Remove local track error:', err);
+          }
+        }
+      });
+    } else if (context === 'favorites') {
+      items.push({
+        label: 'Remove from favorites',
+        icon: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>',
+        danger: true,
+        run: () => {
+          toggleFavoriteTrack(track);
+          if (row) row.remove();
+          if (typeof updatePlaylistFavHeartState === 'function') updatePlaylistFavHeartState();
+        }
+      });
     }
 
     const menu = document.createElement('div');
-    menu.className = 'track-context-menu';
+    menu.className = 'm3-track-dots-menu track-context-menu';
     menu.setAttribute('role', 'menu');
     items.forEach(item => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'track-context-item' + (item.danger ? ' danger' : '');
       b.setAttribute('role', 'menuitem');
-      b.textContent = item.label;
+      b.innerHTML = `${item.icon || ''}<span>${escapeHtml(item.label)}</span>${item.badge ? `<span style="margin-left:auto;font-size:11px;opacity:0.6;">${escapeHtml(item.badge)}</span>` : ''}`;
       b.addEventListener('click', (e) => {
         e.stopPropagation();
         closeTrackContextMenu();
@@ -9016,11 +9635,34 @@ document.addEventListener('DOMContentLoaded', async () => {
       menu.appendChild(b);
     });
     document.body.appendChild(menu);
-    const rect = menu.getBoundingClientRect();
-    menu.style.left = `${Math.max(8, Math.min(x, window.innerWidth - rect.width - 8))}px`;
-    menu.style.top = `${Math.max(8, Math.min(y, window.innerHeight - rect.height - 8))}px`;
+
+    let posX = x || 0;
+    let posY = y || 0;
+    if (triggerBtn) {
+      const rect = triggerBtn.getBoundingClientRect();
+      posX = rect.left;
+      posY = rect.bottom + 4;
+    }
+    const menuWidth = 220;
+    const menuHeight = menu.offsetHeight || 260;
+    if (posX + menuWidth > window.innerWidth - 10) posX = window.innerWidth - menuWidth - 10;
+    if (posX < 10) posX = 10;
+    if (posY + menuHeight > window.innerHeight - 10) {
+      if (triggerBtn) {
+        posY = Math.max(10, triggerBtn.getBoundingClientRect().top - menuHeight - 4);
+      } else {
+        posY = window.innerHeight - menuHeight - 10;
+      }
+    }
+    menu.style.left = `${posX}px`;
+    menu.style.top = `${posY}px`;
+    menu._triggerBtn = triggerBtn;
     trackMenuEl = menu;
   }
+
+  window.openTrackDotsMenu = (e, track, context, row, triggerBtn) => {
+    openTrackContextMenu((e && e.clientX) || 0, (e && e.clientY) || 0, track, context, row, triggerBtn);
+  };
 
   document.addEventListener('click', closeTrackContextMenu);
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeTrackContextMenu(); });
@@ -9089,6 +9731,29 @@ document.addEventListener('DOMContentLoaded', async () => {
       container.appendChild(fragment);
       container._hasInitialRendered = true;
       highlightPlayingRow();
+
+      if (context === 'search' && tracks.length >= 20 && state.searchHasMore) {
+        let moreWrap = document.getElementById('search-load-more-wrap');
+        if (!moreWrap && container.parentElement) {
+          moreWrap = document.createElement('div');
+          moreWrap.id = 'search-load-more-wrap';
+          moreWrap.className = 'search-load-more-container';
+          const btn = document.createElement('button');
+          btn.id = 'btn-search-load-more';
+          btn.className = 'btn-search-load-more';
+          btn.textContent = state.searchAutoLoading ? 'Loading…' : 'Show More';
+          btn.addEventListener('click', () => {
+            state.searchAutoLoading = true;
+            btn.textContent = 'Loading…';
+            loadMoreSearchResults();
+          });
+          moreWrap.appendChild(btn);
+          container.parentElement.appendChild(moreWrap);
+        }
+      } else if (context === 'search' && !state.searchHasMore) {
+        const moreWrap = document.getElementById('search-load-more-wrap');
+        if (moreWrap) moreWrap.remove();
+      }
     }
     
     container._vScrollHandler = () => {
@@ -9098,6 +9763,11 @@ document.addEventListener('DOMContentLoaded', async () => {
           container._ticking = false;
         });
         container._ticking = true;
+      }
+      if (context === 'search' && state.searchAutoLoading && state.searchHasMore && !state.searchIsLoadingMore && scrollParent) {
+        if (scrollParent.scrollTop + scrollParent.clientHeight >= scrollParent.scrollHeight - 350) {
+          loadMoreSearchResults();
+        }
       }
     };
     
@@ -9222,17 +9892,17 @@ function renderClickableArtists(container, rawArtist) {
   function isArtistFollowed(artistName) {
     if (!artistName) return false;
     const lower = artistName.trim().toLowerCase();
-    const favs = safeArray('riff_favorite_artists');
+    const favs = safeArray('lumo_favorite_artists');
     return favs.some(x => (typeof x === 'string' ? x : x.name || '').toLowerCase().trim() === lower);
   }
 
   function getFavoriteArtistsList() {
-    const favsRaw = safeArray('riff_favorite_artists');
+    const favsRaw = safeArray('lumo_favorite_artists');
     if (!favsRaw || favsRaw.length === 0) return [];
 
-    const unfollowedList = safeArray('riff_unfollowed_artists');
+    const unfollowedList = safeArray('lumo_unfollowed_artists');
     const unfollowed = new Set(unfollowedList.map(a => (typeof a === 'string' ? a : a.name || '').toLowerCase().trim()));
-    const metaCache = safeJson('riff_artist_meta_cache', {});
+    const metaCache = safeJson('lumo_artist_meta_cache', {});
 
     const result = [];
     const seen = new Set();
@@ -9262,9 +9932,9 @@ function renderClickableArtists(container, rawArtist) {
     const cleanName = artistName.trim();
     const lower = cleanName.toLowerCase();
 
-    let favs = safeArray('riff_favorite_artists');
-    let unfollowed = safeArray('riff_unfollowed_artists');
-    const metaCache = safeJson('riff_artist_meta_cache', {});
+    let favs = safeArray('lumo_favorite_artists');
+    let unfollowed = safeArray('lumo_unfollowed_artists');
+    const metaCache = safeJson('lumo_artist_meta_cache', {});
 
     const isFav = favs.some(x => (typeof x === 'string' ? x : x.name || '').toLowerCase().trim() === lower);
 
@@ -9288,11 +9958,11 @@ function renderClickableArtists(container, rawArtist) {
 
     if (meta && (meta.avatar || meta.fans)) {
       metaCache[lower] = { ...(metaCache[lower] || {}), ...meta };
-      localStorage.setItem('riff_artist_meta_cache', JSON.stringify(metaCache));
+      localStorage.setItem('lumo_artist_meta_cache', JSON.stringify(metaCache));
     }
 
-    localStorage.setItem('riff_favorite_artists', JSON.stringify(favs));
-    localStorage.setItem('riff_unfollowed_artists', JSON.stringify(unfollowed));
+    localStorage.setItem('lumo_favorite_artists', JSON.stringify(favs));
+    localStorage.setItem('lumo_unfollowed_artists', JSON.stringify(unfollowed));
 
     const followed = !isFav;
     const btnFollow = document.getElementById('btn-artist-follow');
@@ -9333,13 +10003,13 @@ function renderClickableArtists(container, rawArtist) {
               }
             }
           }
-          const cache = safeJson('riff_artist_meta_cache', {});
+          const cache = safeJson('lumo_artist_meta_cache', {});
           cache[lower] = {
             avatar: artistObj.avatar || '',
             fans: artistObj.fans || 0,
             plays: artistObj.plays || 0
           };
-          localStorage.setItem('riff_artist_meta_cache', JSON.stringify(cache));
+          localStorage.setItem('lumo_artist_meta_cache', JSON.stringify(cache));
         }
       })
       .catch(() => {});
@@ -9354,7 +10024,7 @@ function renderClickableArtists(container, rawArtist) {
       card.className = 'fav-artist-card';
     }
 
-    const metaCache = safeJson('riff_artist_meta_cache', {});
+    const metaCache = safeJson('lumo_artist_meta_cache', {});
     const lower = (artistObj.name || '').toLowerCase();
     const cached = metaCache[lower];
 
@@ -9562,7 +10232,7 @@ function renderClickableArtists(container, rawArtist) {
           fans: (state.currentArtistData && (state.currentArtistData.fans || state.currentArtistData.nb_fan)) || 0
         };
         const nowFollowed = toggleFollowArtist(cleanName, meta);
-        showToast(nowFollowed ? `Following ${cleanName}` : `Unfollowed ${cleanName}`, 'info');
+        showToastNow(nowFollowed ? `Following ${cleanName}` : `Unfollowed ${cleanName}`, 'info');
       };
     }
     if (el.artistProfileBio) {
@@ -9616,18 +10286,18 @@ function renderClickableArtists(container, rawArtist) {
             fans: (data.artist && (data.artist.fans || data.artist.nb_fan)) || 0
           };
           const nowFollowed = toggleFollowArtist(cleanName, meta);
-          showToast(nowFollowed ? `Following ${cleanName}` : `Unfollowed ${cleanName}`, 'info');
+          showToastNow(nowFollowed ? `Following ${cleanName}` : `Unfollowed ${cleanName}`, 'info');
         };
       }
       if (data.artist) {
         const lower = cleanName.toLowerCase();
-        const cache = safeJson('riff_artist_meta_cache', {});
+        const cache = safeJson('lumo_artist_meta_cache', {});
         cache[lower] = {
           avatar: data.artist.avatar || data.artist.banner || (cache[lower] && cache[lower].avatar) || '',
           fans: data.artist.fans || data.artist.nb_fan || (cache[lower] && cache[lower].fans) || 0,
           plays: (cache[lower] && cache[lower].plays) || 0
         };
-        localStorage.setItem('riff_artist_meta_cache', JSON.stringify(cache));
+        localStorage.setItem('lumo_artist_meta_cache', JSON.stringify(cache));
       }
 
       if (!bioFromCache) {
@@ -9863,34 +10533,55 @@ function renderClickableArtists(container, rawArtist) {
       state.favorites.unshift(stampAddedAt(track));
     }
     
-    localStorage.setItem('devsize_favorites', JSON.stringify(state.favorites));
+    localStorage.setItem('lumo_favorites', JSON.stringify(state.favorites));
     updateFavoritesBadge();
     updateFavoriteIcon();
     if (state.currentView === 'favorites') renderFavoritesView();
   }
 
   function updateFavoriteIcon() {
-    if (!el.favIcon) return;
+    const tvkFavorite = document.getElementById('btn-tvk-favorite');
     if (!state.currentTrack) {
-      el.favIcon.setAttribute('fill', 'none');
+      if (el.favIcon) el.favIcon.setAttribute('fill', 'none');
+      if (tvkFavorite) {
+        tvkFavorite.classList.remove('active');
+        tvkFavorite.setAttribute('aria-pressed', 'false');
+        const icon = tvkFavorite.querySelector('svg');
+        if (icon) icon.setAttribute('fill', 'none');
+      }
       return;
     }
     const isFav = state.favorites.some(f => isSameTrack(f, state.currentTrack));
-    el.favIcon.setAttribute('fill', isFav ? 'currentColor' : 'none');
+    if (el.favIcon) el.favIcon.setAttribute('fill', isFav ? 'currentColor' : 'none');
+    if (tvkFavorite) {
+      tvkFavorite.classList.toggle('active', isFav);
+      tvkFavorite.setAttribute('aria-pressed', String(isFav));
+      const icon = tvkFavorite.querySelector('svg');
+      if (icon) icon.setAttribute('fill', isFav ? 'currentColor' : 'none');
+    }
   }
 
   function setNavCount(node, count) {
     if (!node) return;
-    node.textContent = count;
-    const nav = node.closest('.nav-item');
-    node.hidden = !count || !!(nav && nav.classList.contains('active'));
+    const num = parseInt(count, 10) || 0;
+    const shouldHide = num <= 0;
+    node.textContent = num > 999 ? '999+' : (num > 0 ? String(num) : '');
+    node.dataset.count = String(num);
+    node.hidden = shouldHide;
+    if (shouldHide) {
+      node.classList.add('is-hidden');
+      node.style.display = 'none';
+    } else {
+      node.classList.remove('is-hidden');
+      node.style.display = 'inline-flex';
+    }
   }
 
   function updateFavoritesBadge() {
     setNavCount(el.favoritesCount, state.favorites.length);
   }
 
-  const TRACK_SORT_KEYS = { favorites: 'riff_favorites_sort', playlist: 'riff_playlist_sort' };
+  const TRACK_SORT_KEYS = { favorites: 'lumo_favorites_sort', playlist: 'lumo_playlist_sort' };
 
   function getTrackSortMode(kind) {
     const stored = localStorage.getItem(TRACK_SORT_KEYS[kind]);
@@ -10164,12 +10855,32 @@ function renderClickableArtists(container, rawArtist) {
     return out;
   }
 
+  function upgradeArtworkUrl(u) {
+    if (!u || typeof u !== 'string') return '';
+    let res = u;
+    if (res.includes('ytimg.com') || res.includes('googleusercontent.com') || res.includes('youtube.com')) {
+      res = res.replace(/[?&]sqp=[^&#]*/g, '').replace(/[?&]rs=[^&#]*/g, '');
+      res = res.replace(/[?&]$/, '');
+    }
+    if (/(?:i\.ytimg\.com|img\.youtube\.com)\/(?:vi|vi_webp)\/([^/?#]+)\/(?:hqdefault|mqdefault|default|sddefault)\.(jpg|webp)/i.test(res)) {
+      res = res.replace(/\/(?:vi|vi_webp)\/([^/?#]+)\/(?:hqdefault|mqdefault|default|sddefault)\.(jpg|webp)/i, '/vi/$1/maxresdefault.jpg');
+    }
+    res = res
+      .replace(new RegExp('\\/(\\d{2,4})x(\\d{2,4})(bb|cc|sr)?\\.(jpg|png|webp)', 'i'), '/1200x1200bb.$4')
+      .replace(new RegExp('\\/100x100(bb)?\\.(jpg|png|webp)', 'i'), '/1200x1200bb.$2')
+      .replace(new RegExp('\\/picture\\/([^/]+)\\/\\d+x\\d+-', 'i'), '/picture/$1/1000x1000-')
+      .replace(new RegExp('=(?:w\\d+-h\\d+|s\\d+)[^&?]*', 'i'), '=w1200-h1200-l90-rj')
+      .replace(new RegExp('-(?:large|small|badge|crop|t\\d+x\\d+)\\.(jpg|png)', 'i'), '-t500x500.$1');
+    return res;
+  }
+
   function getTrackThumbUrl(track) {
     if (!track) return '';
     const o = getTrackArt(track).cover;
-    if (o) return proxiedThumb(o, track);
+    if (o) return proxiedThumb(upgradeArtworkUrl(o), track);
     if (track.localThumbnail) return track.localThumbnail;
-    return proxiedThumb(track.thumbnail || track.cover || track.image || track.artworkUrl || '', track);
+    const raw = track.thumbnail || track.cover || track.image || track.artworkUrl || '';
+    return proxiedThumb(upgradeArtworkUrl(raw), track);
   }
 
   function renderPlaylistCover(container, playlist, size = 64) {
@@ -10516,7 +11227,7 @@ function renderClickableArtists(container, rawArtist) {
     setOrder: (fromIdx, toIdx) => {
       const [moved] = state.playlists.splice(fromIdx, 1);
       state.playlists.splice(toIdx, 0, moved);
-      localStorage.setItem('devsize_playlists', JSON.stringify(state.playlists));
+      localStorage.setItem('lumo_playlists', JSON.stringify(state.playlists));
     }
   });
 
@@ -10527,7 +11238,7 @@ function renderClickableArtists(container, rawArtist) {
     setOrder: (fromIdx, toIdx) => {
       const [moved] = state.customPresets.splice(fromIdx, 1);
       state.customPresets.splice(toIdx, 0, moved);
-      localStorage.setItem('devsize_custom_presets', JSON.stringify(state.customPresets));
+      localStorage.setItem('lumo_custom_presets', JSON.stringify(state.customPresets));
     }
   });
 
@@ -10538,7 +11249,7 @@ function renderClickableArtists(container, rawArtist) {
     setOrder: (fromIdx, toIdx) => {
       const [moved] = state.favorites.splice(fromIdx, 1);
       state.favorites.splice(toIdx, 0, moved);
-      localStorage.setItem('devsize_favorites', JSON.stringify(state.favorites));
+      localStorage.setItem('lumo_favorites', JSON.stringify(state.favorites));
       if (el.favoritesSubtitle) {
         el.favoritesSubtitle.textContent = `${state.favorites.length} tracks saved`;
       }
@@ -10554,7 +11265,7 @@ function renderClickableArtists(container, rawArtist) {
       if (!pl || !pl.tracks) return;
       const [moved] = pl.tracks.splice(fromIdx, 1);
       pl.tracks.splice(toIdx, 0, moved);
-      localStorage.setItem('devsize_playlists', JSON.stringify(state.playlists));
+      localStorage.setItem('lumo_playlists', JSON.stringify(state.playlists));
     }
   });
 
@@ -10571,7 +11282,7 @@ function renderClickableArtists(container, rawArtist) {
       newPl.cover = cover.trim();
     }
     state.playlists.push(newPl);
-    localStorage.setItem('devsize_playlists', JSON.stringify(state.playlists));
+    localStorage.setItem('lumo_playlists', JSON.stringify(state.playlists));
     renderPlaylistsList();
     openPlaylistDetail(newPl.id);
   }
@@ -10594,7 +11305,7 @@ function renderClickableArtists(container, rawArtist) {
         const newName = el.playlistDetailTitle.textContent.trim() || pl.name || 'Untitled';
         if (pl.name !== newName) {
           pl.name = newName;
-          localStorage.setItem('devsize_playlists', JSON.stringify(state.playlists));
+          localStorage.setItem('lumo_playlists', JSON.stringify(state.playlists));
           renderPlaylistsList();
         }
         el.playlistDetailTitle.textContent = pl.name;
@@ -10615,7 +11326,7 @@ function renderClickableArtists(container, rawArtist) {
         const newDesc = descEl.textContent.trim();
         if ((pl.description || '') !== newDesc) {
           pl.description = newDesc;
-          localStorage.setItem('devsize_playlists', JSON.stringify(state.playlists));
+          localStorage.setItem('lumo_playlists', JSON.stringify(state.playlists));
         }
         descEl.textContent = pl.description || '';
       };
@@ -10654,7 +11365,7 @@ function renderClickableArtists(container, rawArtist) {
           const url = await window.electronAPI.pickMedia();
           if (url) {
             pl.cover = url;
-            localStorage.setItem('devsize_playlists', JSON.stringify(state.playlists));
+            localStorage.setItem('lumo_playlists', JSON.stringify(state.playlists));
             openPlaylistDetail(playlistId);
           }
         }
@@ -10681,9 +11392,88 @@ function renderClickableArtists(container, rawArtist) {
       }
     }
     if (el.playlistTracksList) renderTracks(el.playlistTracksList, filtered, 'playlist');
+    updatePlaylistFavHeartState();
+    const btnRepostPl = document.getElementById('btn-repost-playlist');
+    if (btnRepostPl) {
+      const isRep = isPlaylistReposted(playlistId);
+      btnRepostPl.classList.toggle('active', isRep);
+      const svg = btnRepostPl.querySelector('svg');
+      if (svg) svg.style.stroke = isRep ? 'var(--md-sys-color-primary, #d0bcff)' : 'currentColor';
+    }
+    updatePlaylistPlayButtonState();
     switchView('playlist-detail');
     renderPlaylistsList();
   }
+
+  function updatePlaylistPlayButtonState() {
+    const btn = el.btnPlayPlaylist || document.getElementById('btn-play-playlist');
+    const label = document.getElementById('btn-play-playlist-label');
+    if (!btn) return;
+    const pl = (state.playlists || []).find(p => p.id === state.currentPlaylistId);
+    const isPlayingCurrentPl = !!(state.isPlaying && pl && pl.tracks && pl.tracks.some(t => isSameTrack(t, state.currentTrack)));
+    if (label) label.textContent = isPlayingCurrentPl ? 'Pause' : 'Play';
+    const svg = btn.querySelector('svg');
+    if (svg) {
+      if (isPlayingCurrentPl) {
+        svg.innerHTML = '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
+      } else {
+        svg.innerHTML = '<polygon points="6 4 20 12 6 20 6 4"></polygon>';
+      }
+    }
+  }
+
+  function updateAlbumPlayButtonState() {
+    const btn = el.btnPlayAlbum || document.getElementById('btn-play-album');
+    if (!btn) return;
+    const album = currentAlbumForFeedback;
+    const tracks = album && Array.isArray(album._tracks) ? album._tracks : null;
+    const current = state.currentTrack;
+    const isPlayingCurrentAlbum = !!(state.isPlaying && tracks && current && tracks.some(t => {
+      if (isSameTrack(t, current)) return true;
+      return normalizeMatchText(t.title) === normalizeMatchText(current.title)
+        && normalizeMatchText(t.artist || album.artist) === normalizeMatchText(current.artist);
+    }));
+    const svg = btn.querySelector('svg');
+    if (svg) {
+      if (isPlayingCurrentAlbum) {
+        svg.innerHTML = '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
+        svg.style.marginLeft = '0';
+      } else {
+        svg.innerHTML = '<polygon points="6 4 20 12 6 20 6 4"></polygon>';
+        svg.style.marginLeft = '3px';
+      }
+    }
+    btn.title = isPlayingCurrentAlbum ? 'Pause' : 'Play';
+    btn.setAttribute('aria-label', btn.title);
+  }
+
+  (function setupPlayPlaylistButton() {
+    const btn = el.btnPlayPlaylist || document.getElementById('btn-play-playlist');
+    if (btn && !btn._bound) {
+      btn._bound = true;
+      btn.addEventListener('click', () => {
+        const pl = (state.playlists || []).find(p => p.id === state.currentPlaylistId);
+        if (!pl || !pl.tracks || !pl.tracks.length) {
+          showToast('Playlist is empty', 'info');
+          return;
+        }
+        const isCurrentPlTrack = !!(state.currentTrack && pl.tracks.some(t => isSameTrack(t, state.currentTrack)));
+        if (isCurrentPlTrack && el.nativeAudio && el.nativeAudio.src) {
+          if (state.isPlaying) {
+            pauseSmooth();
+          } else {
+            playSmooth();
+          }
+        } else {
+          const sorted = sortTracksFor('playlist', pl.tracks);
+          const firstTrack = (sorted && sorted.length) ? sorted[0] : pl.tracks[0];
+          const trackList = (sorted && sorted.length) ? sorted : pl.tracks;
+          playTrack(firstTrack, [...trackList], 0, 'playlist');
+        }
+        updatePlaylistPlayButtonState();
+      });
+    }
+  })();
 
   if (el.playlistSort) {
     el.playlistSort.addEventListener('change', () => {
@@ -10695,23 +11485,27 @@ function renderClickableArtists(container, rawArtist) {
 
   (function setupFavAllPlaylist() {
     const btn = document.getElementById('btn-fav-all-playlist');
-    if (!btn) return;
-    btn.addEventListener('click', () => {
-      const pl = state.playlists.find(p => p.id === state.currentPlaylistId);
-      if (!pl || !pl.tracks) return;
-      let added = 0;
-      for (let i = pl.tracks.length - 1; i >= 0; i--) {
-        const track = pl.tracks[i];
-        if (!state.favorites.some(f => isSameTrack(f, track))) {
-          state.favorites.unshift(track);
-          added++;
-        }
-      }
-      localStorage.setItem('devsize_favorites', JSON.stringify(state.favorites));
-      updateFavoritesBadge();
-      updateFavoriteIcon();
-      showToast(added ? `Added ${added} track${added === 1 ? '' : 's'} to favorites` : 'Already in favorites', added ? 'success' : 'info');
-    });
+    if (btn) {
+      btn.addEventListener('click', () => {
+        const pl = state.playlists.find(p => p.id === state.currentPlaylistId);
+        if (!pl) return;
+        togglePlaylistFavorite(pl);
+        updatePlaylistFavHeartState();
+        if (typeof updateProfileStatsIfOpen === 'function') updateProfileStatsIfOpen();
+      });
+    }
+
+    const btnRepostPl = document.getElementById('btn-repost-playlist');
+    if (btnRepostPl) {
+      btnRepostPl.addEventListener('click', () => {
+        const pl = state.playlists.find(p => p.id === state.currentPlaylistId);
+        if (!pl) return;
+        const rep = togglePlaylistRepost(pl);
+        btnRepostPl.classList.toggle('active', rep);
+        const svg = btnRepostPl.querySelector('svg');
+        if (svg) svg.style.stroke = rep ? 'var(--md-sys-color-primary, #d0bcff)' : 'currentColor';
+      });
+    }
   })();
 
   (function setupMultiSelectControls() {
@@ -10732,10 +11526,10 @@ function renderClickableArtists(container, rawArtist) {
       multiSel.tracks.forEach(t => {
         if (!state.favorites.some(f => isSameTrack(f, t))) { state.favorites.unshift(t); added++; }
       });
-      localStorage.setItem('devsize_favorites', JSON.stringify(state.favorites));
+      localStorage.setItem('lumo_favorites', JSON.stringify(state.favorites));
       updateFavoritesBadge();
       updateFavoriteIcon();
-      showToast(added ? `Added ${added} track${added === 1 ? '' : 's'} to favorites` : 'Already in favorites', added ? 'success' : 'info');
+      showToastNow(added ? `Added ${added} track${added === 1 ? '' : 's'} to favorites` : 'Already in favorites', added ? 'success' : 'info');
     });
     on('multi-select-add', () => {
       const picked = Array.from(multiSel.tracks.values());
@@ -10746,14 +11540,14 @@ function renderClickableArtists(container, rawArtist) {
       if (!n || !window.confirm(`Remove ${n} track${n === 1 ? '' : 's'}?`)) return;
       if (multiSel.context === 'favorites') {
         state.favorites = state.favorites.filter(f => !multiSel.tracks.has(getTrackCanonicalId(f)));
-        localStorage.setItem('devsize_favorites', JSON.stringify(state.favorites));
+        localStorage.setItem('lumo_favorites', JSON.stringify(state.favorites));
         updateFavoritesBadge();
         updateFavoriteIcon();
       } else {
         const pl = state.playlists.find(p => p.id === state.currentPlaylistId);
         if (pl) {
           pl.tracks = pl.tracks.filter(t => !multiSel.tracks.has(getTrackCanonicalId(t)));
-          localStorage.setItem('devsize_playlists', JSON.stringify(state.playlists));
+          localStorage.setItem('lumo_playlists', JSON.stringify(state.playlists));
           renderPlaylistsList();
         }
       }
@@ -10767,17 +11561,26 @@ function renderClickableArtists(container, rawArtist) {
     const pl = state.playlists.find(p => p.id === state.currentPlaylistId);
     if (!pl) return;
     pl.tracks = pl.tracks.filter(t => t.id !== trackId);
-    localStorage.setItem('devsize_playlists', JSON.stringify(state.playlists));
+    localStorage.setItem('lumo_playlists', JSON.stringify(state.playlists));
     openPlaylistDetail(state.currentPlaylistId);
   }
 
   function deleteCurrentPlaylist() {
     if (!state.currentPlaylistId) return;
-    state.playlists = state.playlists.filter(p => p.id !== state.currentPlaylistId);
-    localStorage.setItem('devsize_playlists', JSON.stringify(state.playlists));
+    const deletedId = String(state.currentPlaylistId);
+    state.playlists = state.playlists.filter(p => String(p.id) !== deletedId);
+    localStorage.setItem('lumo_playlists', JSON.stringify(state.playlists));
+    try { localStorage.setItem('lumo_favorite_playlists', JSON.stringify(getFavoritePlaylists().filter(p => String(p.id) !== deletedId))); } catch (_) {}
+    try { localStorage.setItem('lumo_reposted_playlists', JSON.stringify(getPlaylistReposts().filter(p => String(p.id) !== deletedId))); } catch (_) {}
+    try {
+      const counts = JSON.parse(localStorage.getItem('lumo_repost_counts') || '{}');
+      delete counts[deletedId];
+      localStorage.setItem('lumo_repost_counts', JSON.stringify(counts));
+    } catch (_) {}
     state.currentPlaylistId = null;
     renderPlaylistsList();
     switchView('discover');
+    updateProfileStatsIfOpen();
   }
 
   let trackToAddToPlaylist = null;
@@ -10900,18 +11703,18 @@ function renderClickableArtists(container, rawArtist) {
             const fresh = many.filter(m => !pl.tracks.some(t => t.id === m.id));
             fresh.forEach(m => pl.tracks.push(stampAddedAt(m)));
             if (fresh.length) {
-              localStorage.setItem('devsize_playlists', JSON.stringify(state.playlists));
+              localStorage.setItem('lumo_playlists', JSON.stringify(state.playlists));
               renderPlaylistsList();
             }
-            showToast(fresh.length ? `Added ${fresh.length} track${fresh.length === 1 ? '' : 's'} to "${pl.name}"` : `Already in "${pl.name}"`, fresh.length ? 'success' : 'info');
+            showToastNow(fresh.length ? `Added ${fresh.length} track${fresh.length === 1 ? '' : 's'} to "${pl.name}"` : `Already in "${pl.name}"`, fresh.length ? 'success' : 'info');
           } else if (track) {
             if (!pl.tracks.some(t => t.id === track.id)) {
               pl.tracks.push(stampAddedAt(track));
-              localStorage.setItem('devsize_playlists', JSON.stringify(state.playlists));
+              localStorage.setItem('lumo_playlists', JSON.stringify(state.playlists));
               renderPlaylistsList();
-              showToast(`Added to "${pl.name}"`, 'success');
+              showToastNow(`Added to "${pl.name}"`, 'success');
             } else {
-              showToast(`Already in "${pl.name}"`, 'info');
+              showToastNow(`Already in "${pl.name}"`, 'info');
             }
           }
           if (el.addToPlaylistModal) closeModal(el.addToPlaylistModal);
@@ -10925,6 +11728,11 @@ function renderClickableArtists(container, rawArtist) {
 
   function switchView(viewName) {
     state.currentView = viewName;
+    if (viewName === 'settings') {
+      state.isRightPanelOpen = false;
+      el.rightPanel?.classList.add('hidden');
+      el.btnToggleLyricsPanel?.classList.remove('active');
+    }
     if (multiSel.active) {
       const keep = (viewName === 'playlist-detail' && multiSel.context === 'playlist') || (viewName === 'favorites' && multiSel.context === 'favorites');
       if (!keep) exitMultiSelect(false);
@@ -10932,13 +11740,13 @@ function renderClickableArtists(container, rawArtist) {
 
     requestAnimationFrame(() => {
       document.querySelectorAll('.no-enter-anim').forEach(c => c.classList.remove('no-enter-anim'));
-      [el.viewDiscover, el.viewFavorites, el.viewAlbums, el.viewLocal, el.viewHistory, el.viewQueue, el.viewPlaylistDetail, el.viewAlbum, el.viewArtist, el.viewSettings].forEach(v => {
+      [el.viewDiscover, el.viewFavorites, el.viewAlbums, el.viewLocal, el.viewHistory, el.viewStats, el.viewQueue, el.viewPlaylistDetail, el.viewAlbum, el.viewArtist, el.viewSettings, el.viewProfile].forEach(v => {
         if (v) v.classList.remove('active');
       });
 
         const nestedView = viewName === 'playlist-detail' || viewName === 'album' || viewName === 'artist';
         if (!nestedView) {
-          [el.navDiscover, el.navFavorites, el.navAlbums, el.navLocal, el.navHistory, el.navQueue, el.navSettings].forEach(n => {
+          [el.navDiscover, el.navFavorites, el.navAlbums, el.navLocal, el.navHistory, el.navStats, el.navQueue, el.navProfile, el.navSettings].forEach(n => {
             if (n) n.classList.remove('active');
           });
         }
@@ -10946,8 +11754,9 @@ function renderClickableArtists(container, rawArtist) {
           if (viewName === 'discover') {
             if (el.viewDiscover) el.viewDiscover.classList.add('active');
             if (el.navDiscover) el.navDiscover.classList.add('active');
-            const sp = (localStorage.getItem('riff_home_layout') || 'spotify') === 'spotify';
+            const sp = (localStorage.getItem('lumo_home_layout') || 'spotify') === 'spotify';
             if (sp) renderSpotifyHome();
+            else renderDynamicDiscoverSections();
           } else if (viewName === 'favorites') {
             if (el.viewFavorites) el.viewFavorites.classList.add('active');
             if (el.navFavorites) el.navFavorites.classList.add('active');
@@ -10964,6 +11773,10 @@ function renderClickableArtists(container, rawArtist) {
             if (el.viewHistory) el.viewHistory.classList.add('active');
             if (el.navHistory) el.navHistory.classList.add('active');
             renderHistoryView();
+          } else if (viewName === 'stats') {
+            if (el.viewStats) el.viewStats.classList.add('active');
+            if (el.navStats) el.navStats.classList.add('active');
+            renderStatsView();
           } else if (viewName === 'queue') {
             if (el.viewQueue) el.viewQueue.classList.add('active');
             if (el.navQueue) el.navQueue.classList.add('active');
@@ -10974,10 +11787,14 @@ function renderClickableArtists(container, rawArtist) {
             if (el.viewAlbum) el.viewAlbum.classList.add('active');
           } else if (viewName === 'artist') {
             if (el.viewArtist) el.viewArtist.classList.add('active');
+          } else if (viewName === 'profile') {
+            if (el.viewProfile) el.viewProfile.classList.add('active');
+            if (el.navProfile) el.navProfile.classList.add('active');
+            renderProfileView();
           } else if (viewName === 'settings') {
             if (el.viewSettings) el.viewSettings.classList.add('active');
             if (el.navSettings) el.navSettings.classList.add('active');
-            const savedCat = localStorage.getItem('riff_settings_cat');
+            const savedCat = localStorage.getItem('lumo_settings_cat');
             showSettingsCategory((savedCat === 'overview' || !savedCat) ? 'home' : savedCat);
             updateOfflineStorageUI();
             updateMusicFolderUI();
@@ -10994,6 +11811,1673 @@ function renderClickableArtists(container, rawArtist) {
           if (typeof syncHomeAmbientVisibility === 'function') syncHomeAmbientVisibility();
           updateFxVisibility();
     });
+  }
+
+  const DEFAULT_REGISTERED_USERS = [];
+  const DEMO_USERNAMES = new Set(['rootscripts', 'marina_v', 'alice', 'alex_m', 'sarah_k', 'shadow']);
+
+  function getRegisteredUsers() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem('lumo_registered_users') || '[]');
+      const users = Array.isArray(parsed) ? parsed.filter(u => u && typeof u === 'object' && typeof u.username === 'string' && u.username.trim() && !DEMO_USERNAMES.has(u.username.trim().toLowerCase())) : [];
+      if (Array.isArray(parsed) && users.length !== parsed.length) localStorage.setItem('lumo_registered_users', JSON.stringify(users));
+      return users;
+    } catch (e) {
+      localStorage.setItem('lumo_registered_users', '[]');
+      return [];
+    }
+  }
+
+  function getUserAccount() {
+    try {
+      const stored = localStorage.getItem('lumo_user_account');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.isRegistered && (!parsed.email || !parsed.authUsername)) {
+            return { username: 'Guest', isRegistered: false, bio: 'Music enthusiast & audio explorer', avatar: '' };
+          }
+          return parsed;
+        }
+      }
+    } catch (e) {}
+    return {
+      username: 'Guest',
+      isRegistered: false,
+      bio: 'Music enthusiast & audio explorer',
+      avatar: ''
+    };
+  }
+
+  function saveUserAccount(account) {
+    localStorage.setItem('lumo_user_account', JSON.stringify(account));
+    updateUserNavButton();
+    if (state.currentView === 'profile') renderProfileView();
+  }
+
+  if (window.lumoSupabase?.auth) {
+    const syncSupabaseAccount = user => {
+      const current = getUserAccount();
+      if (!user) {
+        if (current.isRegistered) saveUserAccount({ username: 'Guest', isRegistered: false, bio: 'Music enthusiast & audio explorer', avatar: '' });
+        return;
+      }
+      const email = String(user.email || '').toLowerCase();
+      const profile = getRegisteredUsers().find(item => (item.email || '').toLowerCase() === email);
+      const username = user.user_metadata?.username || profile?.authUsername || profile?.username || email.split('@')[0] || 'Listener';
+      const displayName = user.user_metadata?.display_name || profile?.displayName || username;
+      const registered = getRegisteredUsers();
+      const index = registered.findIndex(item => (item.email || '').toLowerCase() === email);
+      const telegramId = user.user_metadata?.telegram_id ?? profile?.telegramId ?? null;
+      const telegramUsername = user.user_metadata?.telegram_username || profile?.telegramUsername || '';
+      const savedProfile = { ...(index >= 0 ? registered[index] : {}), username, displayName, authUsername: username, email, isRegistered: true, bio: profile?.bio || user.user_metadata?.bio || 'Music enthusiast & audio explorer', avatar: profile?.avatar || user.user_metadata?.avatar_url || current.avatar || '', favoriteArtist: profile?.favoriteArtist || user.user_metadata?.favorite_artist || '', likesVisibility: user.user_metadata?.likes_visibility || profile?.likesVisibility || 'public', repostsVisibility: user.user_metadata?.reposts_visibility || profile?.repostsVisibility || 'public', supabaseUserId: user.id, telegramId, telegramUsername };
+      if (index >= 0) registered[index] = savedProfile; else registered.push(savedProfile);
+      localStorage.setItem('lumo_registered_users', JSON.stringify(registered));
+      saveUserAccount({ username, authUsername: username, displayName, email, isRegistered: true, bio: savedProfile.bio, avatar: savedProfile.avatar, favoriteArtist: savedProfile.favoriteArtist, likesVisibility: savedProfile.likesVisibility, repostsVisibility: savedProfile.repostsVisibility, supabaseUserId: user.id, telegramId, telegramUsername });
+      const profileUpsert = { id: user.id, username, display_name: displayName, bio: savedProfile.bio, favorite_artist: savedProfile.favoriteArtist, likes_visibility: savedProfile.likesVisibility, reposts_visibility: savedProfile.repostsVisibility };
+      if (telegramId !== null && telegramId !== undefined) {
+        profileUpsert.telegram_id = String(telegramId);
+        profileUpsert.telegram_username = telegramUsername;
+      }
+      window.lumoSupabase.from('profiles').upsert(profileUpsert, { onConflict: 'id' })
+        .select('verified,supporter,spotlight').single()
+        .then(({ data, error }) => {
+          if (error) { console.warn('Profile cloud sync failed:', error.message); return; }
+          if (data) saveUserAccount({ ...getUserAccount(), verified: !!data.verified, bugHunter: !!data.supporter, alphaTester: !!data.spotlight });
+        }).catch(error => console.warn('Profile cloud sync failed:', error));
+    };
+    window.lumoSupabase.auth.getSession().then(({ data, error }) => {
+      if (error) console.warn('Could not restore Supabase session:', error.message);
+      syncSupabaseAccount(data?.session?.user || null);
+    }).catch(error => console.warn('Could not restore Supabase session:', error));
+    window.lumoSupabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') syncSupabaseAccount(null);
+      else if (event === 'SIGNED_IN' && session?.user) syncSupabaseAccount(session.user);
+    });
+  }
+
+  function getUserFriends() {
+    try {
+      const stored = localStorage.getItem('lumo_user_friends');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  }
+
+  function saveUserFriends(friends) {
+    localStorage.setItem('lumo_user_friends', JSON.stringify(friends));
+    const elStatFr = document.getElementById('profile-stat-friends');
+    if (elStatFr) elStatFr.textContent = String(friends.length);
+  }
+
+  function updateUserNavButton() {
+    const btn = document.getElementById('btn-user-profile');
+    const account = getUserAccount();
+    const sidebarImg = document.getElementById('nav-sidebar-profile-img');
+    const sidebarInitial = document.getElementById('nav-sidebar-profile-initial');
+    const initial = String(account.displayName || account.username || 'G').trim().charAt(0).toUpperCase() || 'G';
+    if (sidebarImg && sidebarInitial) {
+      if (account.avatar) {
+        sidebarImg.src = account.avatar;
+        sidebarImg.classList.remove('hidden');
+        sidebarInitial.classList.add('hidden');
+      } else {
+        sidebarImg.removeAttribute('src');
+        sidebarImg.classList.add('hidden');
+        sidebarInitial.textContent = initial;
+        sidebarInitial.classList.remove('hidden');
+      }
+    }
+    if (!btn) return;
+    const nameEl = btn.querySelector('.profile-nav-name');
+    if (nameEl) {
+      nameEl.textContent = account.username || 'Guest';
+    }
+    let navAvatar = btn.querySelector('.profile-nav-avatar-img');
+    const svgIcon = btn.querySelector('svg');
+    if (account.avatar) {
+      if (!navAvatar) {
+        navAvatar = document.createElement('img');
+        navAvatar.className = 'profile-nav-avatar-img';
+        btn.insertBefore(navAvatar, nameEl || null);
+      }
+      navAvatar.src = account.avatar;
+      navAvatar.style.display = '';
+      if (svgIcon) svgIcon.style.display = 'none';
+    } else {
+      if (navAvatar) navAvatar.style.display = 'none';
+      if (svgIcon) svgIcon.style.display = '';
+    }
+  }
+
+  function updatePinnedPlayButtonState() {
+    const playBtn = document.getElementById('btn-play-pinned-track');
+    const playLabel = document.getElementById('btn-play-pinned-label');
+    if (!playBtn) return;
+    let pinned = null;
+    const myAccount = getUserAccount();
+    const isOwner = !state.viewingProfileUser || (state.viewingProfileUser.username.toLowerCase() === myAccount.username.toLowerCase());
+    const account = isOwner ? myAccount : state.viewingProfileUser;
+    if (isOwner && myAccount.isRegistered) {
+      try {
+        const stored = localStorage.getItem('lumo_pinned_track');
+        if (stored) pinned = JSON.parse(stored);
+      } catch (e) {}
+      if (!pinned && state.favorites && state.favorites.length > 0) {
+        pinned = state.favorites[0];
+      }
+    } else if (!isOwner) {
+      pinned = (account && account.pinnedTrack) ? account.pinnedTrack : null;
+    }
+    const isPlayingPinned = !!(state.isPlaying && pinned && state.currentTrack && isSameTrack(state.currentTrack, pinned));
+    if (playLabel) playLabel.textContent = isPlayingPinned ? 'Pause' : 'Play';
+    const svg = playBtn.querySelector('svg');
+    if (svg) {
+      if (isPlayingPinned) {
+        svg.innerHTML = '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
+      } else {
+        svg.innerHTML = '<polygon points="5 3 19 12 5 21 5 3"></polygon>';
+      }
+    }
+  }
+
+  function updateProfileStatsIfOpen() {
+    if (state.currentView !== 'profile') return;
+    renderProfileView();
+  }
+
+  function renderProfileView() {
+    if (!el.viewProfile) return;
+
+    const myAccount = getUserAccount();
+    const isOwner = !state.viewingProfileUser || (state.viewingProfileUser.username.toLowerCase() === myAccount.username.toLowerCase());
+    const account = isOwner ? myAccount : state.viewingProfileUser;
+    const isGuestOwner = isOwner && !myAccount.isRegistered;
+    el.viewProfile.classList.toggle('own-profile-view', isOwner);
+    const privateContent = document.getElementById('profile-private-content');
+    const guestGate = document.getElementById('profile-guest-gate');
+    if (el.viewProfile) el.viewProfile.classList.toggle('guest-view', isGuestOwner);
+    if (privateContent) privateContent.inert = isGuestOwner;
+    if (guestGate) {
+      guestGate.classList.toggle('hidden', !isGuestOwner);
+      guestGate.setAttribute('aria-hidden', String(!isGuestOwner));
+    }
+    const registerGateBtn = document.getElementById('btn-profile-register');
+    const loginGateBtn = document.getElementById('btn-profile-login');
+    if (registerGateBtn) registerGateBtn.onclick = () => openRegisterModal('register');
+    if (loginGateBtn) loginGateBtn.onclick = () => openRegisterModal('login');
+
+    const privacyCard = document.getElementById('profile-privacy-card');
+    const likesVisibility = document.getElementById('profile-likes-visibility');
+    const repostsVisibility = document.getElementById('profile-reposts-visibility');
+    if (privacyCard) privacyCard.classList.toggle('hidden', !isOwner || !myAccount.isRegistered);
+    const validPrivacy = value => ['public', 'friends', 'private'].includes(value) ? value : 'public';
+    const privacyLabels = { public: 'Public', friends: 'Friends', private: 'Only me' };
+    const setPrivacyButton = (button, value) => {
+      if (!button) return;
+      const normalized = validPrivacy(value);
+      button.dataset.value = normalized;
+      const label = button.querySelector('.privacy-select-value');
+      if (label) label.textContent = privacyLabels[normalized];
+      button.closest('.profile-privacy-select')?.querySelectorAll('[role="option"]').forEach(option => {
+        option.setAttribute('aria-selected', String(option.dataset.value === normalized));
+      });
+    };
+    setPrivacyButton(likesVisibility, account.likesVisibility || localStorage.getItem('lumo_likes_visibility'));
+    setPrivacyButton(repostsVisibility, account.repostsVisibility || localStorage.getItem('lumo_reposts_visibility'));
+    const savePrivacy = async (field, value) => {
+      if (!isOwner || !myAccount.isRegistered) return;
+      const key = field === 'likesVisibility' ? 'lumo_likes_visibility' : 'lumo_reposts_visibility';
+      const next = validPrivacy(value);
+      localStorage.setItem(key, next);
+      const updatedAccount = { ...getUserAccount(), [field]: next };
+      saveUserAccount(updatedAccount);
+      const registered = getRegisteredUsers();
+      const registeredIndex = registered.findIndex(user => user.supabaseUserId === updatedAccount.supabaseUserId || (user.email && user.email.toLowerCase() === String(updatedAccount.email || '').toLowerCase()));
+      if (registeredIndex >= 0) {
+        registered[registeredIndex] = { ...registered[registeredIndex], [field]: next };
+        localStorage.setItem('lumo_registered_users', JSON.stringify(registered));
+      }
+      const supabase = window.lumoSupabase;
+      const userId = getUserAccount().supabaseUserId;
+      if (!supabase || !userId) return;
+      const column = field === 'likesVisibility' ? 'likes_visibility' : 'reposts_visibility';
+      const metadataKey = column;
+      let metadataError = null;
+      let error = null;
+      try { ({ error: metadataError } = await supabase.auth.updateUser({ data: { [metadataKey]: next } })); } catch (syncError) { metadataError = syncError; }
+      try { ({ error } = await supabase.from('profiles').update({ [column]: next, updated_at: new Date().toISOString() }).eq('id', userId)); } catch (syncError) { error = syncError; }
+      if (metadataError || error) console.warn('Privacy preference cloud sync failed; local preference is saved.', metadataError || error);
+    };
+    const bindPrivacyMenu = (button, field) => {
+      if (!button) return;
+      const wrap = button.closest('.profile-privacy-select');
+      const menu = wrap?.querySelector('.privacy-select-menu');
+      if (!menu) return;
+      button.onclick = event => {
+        event.stopPropagation();
+        const open = menu.classList.contains('hidden');
+        document.querySelectorAll('.privacy-select-menu').forEach(other => {
+          other.classList.add('hidden');
+          const otherWrap = other.closest('.profile-privacy-select');
+          otherWrap?.classList.remove('is-open');
+          otherWrap?.querySelector('.privacy-select-trigger')?.setAttribute('aria-expanded', 'false');
+        });
+        menu.classList.toggle('hidden', !open);
+        wrap.classList.toggle('is-open', open);
+        button.setAttribute('aria-expanded', String(open));
+      };
+      menu.querySelectorAll('[role="option"]').forEach(option => {
+        option.onclick = event => {
+          event.stopPropagation();
+          setPrivacyButton(button, option.dataset.value);
+          menu.classList.add('hidden');
+          wrap.classList.remove('is-open');
+          button.setAttribute('aria-expanded', 'false');
+          savePrivacy(field, option.dataset.value);
+        };
+      });
+    };
+    bindPrivacyMenu(likesVisibility, 'likesVisibility');
+    bindPrivacyMenu(repostsVisibility, 'repostsVisibility');
+    if (!window.__lumoPrivacyMenuDismissBound) {
+      window.__lumoPrivacyMenuDismissBound = true;
+      document.addEventListener('click', event => {
+        if (event.target.closest('.profile-privacy-select')) return;
+        document.querySelectorAll('.privacy-select-menu').forEach(menu => {
+          menu.classList.add('hidden');
+          const wrap = menu.closest('.profile-privacy-select');
+          wrap?.classList.remove('is-open');
+          wrap?.querySelector('.privacy-select-trigger')?.setAttribute('aria-expanded', 'false');
+        });
+      });
+    }
+
+    const displayName = document.getElementById('profile-display-name');
+    const displayHandle = document.getElementById('profile-display-handle');
+    const displayBio = document.getElementById('profile-display-bio');
+    const displayGenres = document.getElementById('profile-display-genres');
+    const accountType = document.getElementById('profile-account-type');
+    const verifiedBadge = document.getElementById('profile-verified-badge');
+    const bugHunterBadge = document.getElementById('profile-bug-hunter-badge');
+    const alphaTesterBadge = document.getElementById('profile-alpha-tester-badge');
+    const avatarImg = document.getElementById('profile-avatar-img');
+    const avatarInitial = document.getElementById('profile-avatar-initial');
+    const btnEditProfile = document.getElementById('btn-edit-profile');
+    const btnOwnerTools = document.getElementById('btn-owner-tools');
+
+    if (displayName) displayName.textContent = account.displayName || account.username || 'Guest';
+    if (displayHandle) {
+      const handleName = String(account.authUsername || account.username || '').trim().replace(/^@+/, '').toLowerCase();
+      const showHandle = !!handleName && handleName.toLowerCase() !== 'guest' && (isOwner ? myAccount.isRegistered : true);
+      displayHandle.textContent = showHandle ? `@${handleName}` : '';
+      displayHandle.style.display = showHandle ? '' : 'none';
+    }
+    if (displayBio) displayBio.textContent = account.bio || 'Music enthusiast & audio explorer';
+    if (verifiedBadge) verifiedBadge.classList.toggle('hidden', !account.verified);
+    if (bugHunterBadge) bugHunterBadge.classList.toggle('hidden', !account.bugHunter);
+    if (alphaTesterBadge) alphaTesterBadge.classList.toggle('hidden', !account.alphaTester);
+    if (displayGenres) {
+      displayGenres.textContent = account.favoriteArtist ? `Favorite artist: ${account.favoriteArtist}` : '';
+      displayGenres.style.display = account.favoriteArtist ? '' : 'none';
+      displayGenres.setAttribute('aria-label', account.favoriteArtist ? `Open ${account.favoriteArtist} artist profile` : '');
+      displayGenres.onclick = account.favoriteArtist ? () => openArtistProfile(account.favoriteArtist) : null;
+    }
+    const ownerUsername = String(account.authUsername || account.username || '').trim().toLowerCase();
+    const isLumoOwner = account.isRegistered && (ownerUsername === 'oxeez' || ownerUsername === 'oxeez_');
+    if (accountType) {
+      if (isLumoOwner) {
+        accountType.innerHTML = '<img src="../../assets/badge-owner-crown.png" alt="">';
+        accountType.className = 'profile-owner-crown';
+        accountType.title = 'Owner';
+        accountType.setAttribute('aria-label', 'Owner');
+        accountType.style.display = '';
+      } else {
+        accountType.replaceChildren();
+        accountType.className = 'profile-badge-guest';
+        accountType.removeAttribute('title');
+        accountType.removeAttribute('aria-label');
+        accountType.style.display = 'none';
+      }
+    }
+    if (btnOwnerTools) {
+      const signedIn = getUserAccount();
+      const isOxeez = signedIn.isRegistered && String(signedIn.authUsername || signedIn.username || '').trim().toLowerCase() === 'oxeez';
+      btnOwnerTools.classList.toggle('hidden', !isOxeez || !isOwner);
+      btnOwnerTools.onclick = () => openOwnerToolsModal();
+    }
+    if (btnEditProfile) {
+      btnEditProfile.style.display = isOwner && account.isRegistered ? '' : 'none';
+      if (isOwner && account.isRegistered) {
+        btnEditProfile.textContent = 'Edit Profile';
+        btnEditProfile.onclick = () => openProfileEditModal();
+      }
+    }
+
+    if (avatarImg && avatarInitial) {
+      if (account.avatar) {
+        avatarImg.src = account.avatar;
+        avatarImg.classList.remove('hidden');
+        avatarInitial.classList.add('hidden');
+      } else {
+        avatarImg.classList.add('hidden');
+        avatarInitial.classList.remove('hidden');
+        avatarInitial.textContent = (account.username || 'G').charAt(0).toUpperCase();
+      }
+    }
+
+    const favCount = (state.favorites || []).length;
+    const repTracks = getTrackReposts();
+    const repPlaylists = getPlaylistReposts();
+    const repostCount = repTracks.length + repPlaylists.length;
+    const plCount = (state.playlists || []).length;
+    const friends = getUserFriends();
+
+    const elStatFav = document.getElementById('profile-stat-favorites');
+    const elStatRep = document.getElementById('profile-stat-reposts');
+    const elStatPl = document.getElementById('profile-stat-playlists');
+    const elStatFr = document.getElementById('profile-stat-friends');
+
+    if (elStatFav) elStatFav.textContent = isOwner ? String(favCount) : '—';
+    if (elStatRep) elStatRep.textContent = isOwner ? String(repostCount) : '—';
+    if (elStatPl) elStatPl.textContent = isOwner ? String(plCount) : '—';
+    if (elStatFr) elStatFr.textContent = isOwner ? String(friends.length) : '—';
+
+    const pinnedCard = document.getElementById('profile-pinned-card');
+    if (pinnedCard) {
+      let pinned = null;
+      if (isOwner && myAccount.isRegistered) {
+        try {
+          const stored = localStorage.getItem('lumo_pinned_track');
+          if (stored) pinned = JSON.parse(stored);
+        } catch (e) {}
+
+        if (!pinned && state.favorites && state.favorites.length > 0) {
+          pinned = state.favorites[0];
+        }
+      } else if (!isOwner) {
+        pinned = (account && account.pinnedTrack) ? account.pinnedTrack : null;
+      }
+
+      if (pinned) {
+        const thumb = (typeof getTrackThumbUrl === 'function' ? getTrackThumbUrl(pinned) : '') || pinned.thumbnail || pinned.cover || '';
+        pinnedCard.innerHTML = `
+          <div style="display:flex;align-items:center;gap:16px;width:100%;">
+            <img src="${escapeHtml(thumb)}" alt="" class="pinned-thumb" style="width:72px;height:72px;border-radius:12px;object-fit:cover;background:var(--md-sys-color-surface-container-highest);" onerror="this.style.visibility='hidden'">
+            <div style="display:flex;flex-direction:column;gap:4px;flex:1;min-width:0;">
+              <span style="font-size:12px;font-weight:600;color:var(--md-sys-color-primary);text-transform:uppercase;letter-spacing:0.5px;">Favorite Song</span>
+              <span class="pinned-track-title" id="pinned-track-title" style="font-size:16px;font-weight:700;color:var(--md-sys-color-on-surface);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;" title="Play pinned track">${escapeHtml(pinned.title || 'Untitled')}</span>
+              <span class="pinned-track-artist" id="pinned-track-artist" style="font-size:13px;color:var(--md-sys-color-outline);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer;" title="View artist">${escapeHtml(pinned.artist || 'Unknown artist')}</span>
+            </div>
+            <button class="btn-pill-primary" id="btn-play-pinned-track" style="padding:10px 18px;display:flex;align-items:center;gap:6px;flex-shrink:0;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              <span id="btn-play-pinned-label">Play</span>
+            </button>
+          </div>
+        `;
+        const playBtn = pinnedCard.querySelector('#btn-play-pinned-track');
+        const titleEl = pinnedCard.querySelector('#pinned-track-title');
+        const artistEl = pinnedCard.querySelector('#pinned-track-artist');
+
+        const handlePlayToggle = () => {
+          if (state.currentTrack && isSameTrack(state.currentTrack, pinned) && el.nativeAudio && el.nativeAudio.src) {
+            if (state.isPlaying) {
+              pauseSmooth();
+            } else {
+              playSmooth();
+            }
+          } else {
+            playTrack(pinned, [pinned], 0, 'profile');
+          }
+          updatePinnedPlayButtonState();
+        };
+
+        if (playBtn) playBtn.addEventListener('click', handlePlayToggle);
+        if (titleEl) titleEl.addEventListener('click', () => {
+          if (state.currentTrack && isSameTrack(state.currentTrack, pinned) && el.nativeAudio && el.nativeAudio.src) {
+            if (state.isPlaying) {
+              pauseSmooth();
+            } else {
+              playSmooth();
+            }
+          } else {
+            playTrack(pinned, [pinned], 0, 'profile');
+          }
+          if (el.btnToggleLyricsPanel && !state.isRightPanelOpen) {
+            el.btnToggleLyricsPanel.click();
+          }
+          updatePinnedPlayButtonState();
+        });
+        if (artistEl) {
+          artistEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (pinned.artist && !/^unknown artist$/i.test(pinned.artist)) {
+              openArtistProfile(pinned.artist);
+            }
+          });
+        }
+        updatePinnedPlayButtonState();
+      } else {
+        pinnedCard.innerHTML = `
+          <div style="padding:16px;color:var(--md-sys-color-outline);font-size:13px;text-align:center;width:100%;">
+            ${isOwner ? (myAccount.isRegistered ? 'No favorite song yet. Like a track or click Change to pick one!' : 'Sign in to add a favorite song.') : 'No favorite song yet.'}
+          </div>
+        `;
+      }
+    }
+
+    const btnChangePinned = document.getElementById('btn-change-pinned-track');
+    if (btnChangePinned) {
+      btnChangePinned.style.display = isOwner && myAccount.isRegistered ? '' : 'none';
+      if (!btnChangePinned._bound) {
+        btnChangePinned._bound = true;
+        btnChangePinned.addEventListener('click', () => {
+          openPinTrackModal();
+        });
+      }
+    }
+
+    setupProfileTabs();
+  }
+
+  function openOwnerToolsModal() {
+    const account = getUserAccount();
+    if (!account.isRegistered || String(account.authUsername || account.username || '').toLowerCase() !== 'oxeez') return;
+    const modal = document.getElementById('owner-tools-modal');
+    const search = document.getElementById('owner-tools-search');
+    const results = document.getElementById('owner-tools-results');
+    if (!modal || !search || !results) return;
+    const close = () => closeModal(modal);
+    document.getElementById('btn-close-owner-tools').onclick = close;
+    let timer = null;
+    let controller = null;
+    search.value = '';
+    results.innerHTML = '<div class="owner-tools-empty">Type at least 2 characters to search.</div>';
+    search.oninput = () => {
+      clearTimeout(timer); controller?.abort();
+      const query = search.value.trim();
+      if (query.length < 2) { results.innerHTML = '<div class="owner-tools-empty">Type at least 2 characters to search.</div>'; return; }
+      results.innerHTML = '<div class="owner-tools-empty">Searching accounts…</div>';
+      timer = setTimeout(async () => {
+        const c = new AbortController(); controller = c;
+        try {
+          const selectFields = 'id,username,display_name,verified,supporter,spotlight';
+          const [byUsername, byDisplayName] = await Promise.all([
+            window.lumoSupabase.from('profiles').select(selectFields).ilike('username', `%${query}%`).limit(12).abortSignal(c.signal),
+            window.lumoSupabase.from('profiles').select(selectFields).ilike('display_name', `%${query}%`).limit(12).abortSignal(c.signal)
+          ]);
+          if (byUsername.error) throw byUsername.error;
+          if (byDisplayName.error) throw byDisplayName.error;
+          if (c.signal.aborted || search.value.trim() !== query) return;
+          const profilesById = new Map([...(byUsername.data || []), ...(byDisplayName.data || [])].map(profile => [profile.id, profile]));
+          const data = [...profilesById.values()].slice(0, 12);
+          results.replaceChildren();
+          data.forEach(profile => {
+            const row = document.createElement('section'); row.className = 'owner-tools-user-row';
+            const heading = document.createElement('div'); heading.className = 'owner-tools-user-heading';
+            heading.innerHTML = `<span class="owner-tools-user-name">${escapeHtml(profile.display_name || profile.username)}</span><span class="owner-tools-user-handle">@${escapeHtml(profile.username)}</span>`;
+            const actions = document.createElement('div'); actions.className = 'owner-tools-badge-actions';
+            [['verified','Verified'],['supporter','Bug Hunter'],['spotlight','Alpha Tester']].forEach(([key,label]) => {
+              const button = document.createElement('button'); button.type = 'button'; button.className = `owner-tools-badge ${profile[key] ? 'is-enabled' : ''}`;
+              button.textContent = `${profile[key] ? '✓ ' : '+ '}${label}`;
+              button.title = `${profile[key] ? 'Remove' : 'Give'} ${label.toLowerCase()} badge`;
+              button.onclick = async () => {
+                button.disabled = true;
+                try {
+                  const { error: rpcError } = await window.lumoSupabase.rpc('owner_set_profile_badge', { target_profile_id: profile.id, badge_name: key, enabled: !profile[key] });
+                  if (rpcError) throw rpcError;
+                  const expectedValue = !profile[key];
+                  const { data: savedProfile, error: readBackError } = await window.lumoSupabase.from('profiles').select(selectFields).eq('id', profile.id).single();
+                  if (readBackError) console.warn('Could not confirm saved profile badge:', readBackError.message);
+                  profile[key] = typeof savedProfile?.[key] === 'boolean' ? savedProfile[key] : expectedValue;
+                  button.classList.toggle('is-enabled', profile[key]);
+                  button.textContent = `${profile[key] ? '✓ ' : '+ '}${label}`;
+                  const accountKey = key === 'supporter' ? 'bugHunter' : key === 'spotlight' ? 'alphaTester' : key;
+                  if (getUserAccount().supabaseUserId === profile.id) saveUserAccount({ ...getUserAccount(), [accountKey]: profile[key] });
+                  if (state.viewingProfileUser?.supabaseUserId === profile.id) { state.viewingProfileUser[accountKey] = profile[key]; renderProfileView(); }
+                  showToastNow(`${label} badge ${profile[key] ? 'granted' : 'removed'} for @${profile.username}`, 'success');
+                } catch (error) { showToast(error?.message || 'Owner permission is not configured in Supabase yet.', 'error'); }
+                finally { button.disabled = false; }
+              };
+              actions.appendChild(button);
+            });
+            row.append(heading,actions); results.appendChild(row);
+          });
+          if (!data?.length) results.innerHTML = '<div class="owner-tools-empty">No matching registered accounts.</div>';
+        } catch (error) {
+          if (error.name !== 'AbortError') {
+            const missingProfiles = /could not find the table ['"]?public\.profiles|schema cache|PGRST205/i.test(`${error.code || ''} ${error.message || ''}`);
+            results.innerHTML = missingProfiles
+              ? '<div class="owner-tools-empty"><span>Owner tools needs the profiles table in Supabase.<br><small>Apply <code>supabase/profiles.sql</code> in the Supabase SQL Editor, then refresh the schema cache.</small></span></div>'
+              : `<div class="owner-tools-empty">${escapeHtml(error.message || 'Could not search accounts.')}</div>`;
+          }
+        }
+      }, 160);
+    };
+    openModal(modal); search.focus();
+  }
+
+  function openProfileEditModal() {
+    const modal = document.getElementById('profile-edit-modal');
+    if (!modal) return;
+    const account = getUserAccount();
+    if (!account.isRegistered) { openRegisterModal('register'); return; }
+    const inputUsername = document.getElementById('input-profile-username');
+    const inputNick = document.getElementById('input-profile-nickname');
+    const inputBio = document.getElementById('input-profile-bio');
+    const inputGenres = document.getElementById('input-profile-genres');
+    const clearAvatarButton = document.getElementById('btn-clear-profile-avatar');
+    const errNick = document.getElementById('profile-nick-error');
+    const previewImg = document.getElementById('modal-avatar-preview-img');
+    const previewInitial = document.getElementById('modal-avatar-preview-initial');
+    const title = document.getElementById('profile-modal-title');
+    let avatarBase64 = account.avatar || '';
+
+    if (title) title.textContent = account.isRegistered ? 'Edit Profile' : 'Register Profile';
+    if (inputUsername) { inputUsername.value = account.authUsername || account.username || ''; inputUsername.disabled = true; }
+    if (inputNick) inputNick.value = account.displayName || account.username || '';
+    if (inputGenres) inputGenres.value = account.favoriteArtist || '';
+    const artistSuggestions = document.getElementById('profile-artist-suggestions');
+    if (inputGenres && artistSuggestions) {
+      let artistSearchTimer = null;
+      let artistSearchController = null;
+      let latestArtistQuery = '';
+      const showArtistMessage = (message, loading = false) => {
+        artistSuggestions.innerHTML = `<div class="profile-artist-search-message${loading ? ' is-loading' : ''}">${loading ? '<span class="profile-artist-search-spinner"></span>' : ''}<span>${escapeHtml(message)}</span></div>`;
+        artistSuggestions.classList.remove('hidden');
+      };
+      inputGenres.oninput = () => {
+        clearTimeout(artistSearchTimer);
+        artistSearchController?.abort();
+        const query = inputGenres.value.trim();
+        latestArtistQuery = query;
+        if (query.length < 2) {
+          if (query.length) showArtistMessage('Type one more character to search');
+          else { artistSuggestions.classList.add('hidden'); artistSuggestions.replaceChildren(); }
+          return;
+        }
+        showArtistMessage('Searching artists…', true);
+        artistSearchTimer = setTimeout(async () => {
+          const controller = new AbortController();
+          artistSearchController = controller;
+          try {
+            const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/search?q=${encodeURIComponent(query)}&platform=soundcloud&limit=12`, { signal: controller.signal });
+            if (!res.ok) throw new Error(`Search failed (${res.status})`);
+            const data = await res.json();
+            if (controller.signal.aborted || latestArtistQuery !== query) return;
+            const artists = new Map();
+            (data.tracks || []).forEach(track => {
+              const name = String(track.artist || track.uploader || '').trim();
+              if (name && name.toLowerCase().includes(query.toLowerCase()) && !artists.has(name.toLowerCase())) artists.set(name.toLowerCase(), { name, avatar: track.thumbnail || '' });
+            });
+            artistSuggestions.replaceChildren();
+            [...artists.values()].slice(0, 6).forEach(artist => {
+              const option = document.createElement('button');
+              option.type = 'button'; option.className = 'profile-artist-suggestion';
+              const avatar = artist.avatar ? `<img src="${escapeHtml(artist.avatar)}" class="profile-artist-suggestion-avatar" alt="">` : `<span class="profile-artist-suggestion-avatar is-placeholder">${escapeHtml(artist.name.charAt(0).toUpperCase())}</span>`;
+              option.innerHTML = `${avatar}<span class="profile-artist-suggestion-info"><span class="profile-artist-suggestion-name">${escapeHtml(artist.name)}</span><span class="profile-artist-suggestion-subtitle">SoundCloud artist</span></span><span class="profile-artist-suggestion-arrow" aria-hidden="true">↗</span>`;
+              option.addEventListener('mousedown', event => event.preventDefault());
+              option.addEventListener('click', () => { inputGenres.value = artist.name; artistSuggestions.classList.add('hidden'); artistSuggestions.replaceChildren(); });
+              artistSuggestions.appendChild(option);
+            });
+            if (!artists.size) showArtistMessage('No matching artists found');
+            else artistSuggestions.classList.remove('hidden');
+          } catch (error) {
+            if (error.name !== 'AbortError' && latestArtistQuery === query) showArtistMessage('Artist search is unavailable right now');
+          }
+        }, 100);
+      };
+      inputGenres.onblur = () => setTimeout(() => artistSuggestions.classList.add('hidden'), 160);
+      inputGenres.onfocus = () => { if (inputGenres.value.trim().length >= 2) inputGenres.dispatchEvent(new Event('input')); };
+    }
+
+    if (clearAvatarButton) clearAvatarButton.style.display = avatarBase64 ? '' : 'none';
+    if (inputBio) {
+      inputBio.value = account.bio || '';
+    }
+    if (errNick) {
+      errNick.textContent = '';
+      errNick.style.display = 'none';
+    }
+
+    function updateModalAvatarPreview(src) {
+      if (clearAvatarButton) clearAvatarButton.style.display = src ? '' : 'none';
+      if (src) {
+        if (previewImg) { previewImg.src = src; previewImg.classList.remove('hidden'); }
+        if (previewInitial) previewInitial.classList.add('hidden');
+      } else {
+        if (previewImg) previewImg.classList.add('hidden');
+        if (previewInitial) {
+          previewInitial.classList.remove('hidden');
+          const nick = (inputNick ? inputNick.value.trim() : '') || account.username || 'G';
+          previewInitial.textContent = nick.charAt(0).toUpperCase();
+        }
+      }
+    }
+    updateModalAvatarPreview(avatarBase64);
+
+    const fileInput = document.getElementById('input-profile-avatar-file');
+    if (fileInput) {
+      fileInput.value = '';
+      const uploadLabel = fileInput.closest('label');
+      if (uploadLabel) {
+        uploadLabel.onclick = async (e) => {
+          if (window.electronAPI && typeof window.electronAPI.pickMedia === 'function') {
+            e.preventDefault();
+            try {
+              const mediaUrl = await window.electronAPI.pickMedia();
+              if (mediaUrl) {
+                avatarBase64 = mediaUrl;
+                updateModalAvatarPreview(avatarBase64);
+              }
+            } catch (err) {
+              fileInput.click();
+            }
+          }
+        };
+      }
+      fileInput.onchange = () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) return;
+        if (!file.type.startsWith('image/')) {
+          showToast('Please select a valid image file', 'warning');
+          return;
+        }
+        if (file.size > 5 * 1024 * 1024) {
+          showToast('Image size exceeds 5MB limit', 'warning');
+          return;
+        }
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          avatarBase64 = ev.target.result;
+          updateModalAvatarPreview(avatarBase64);
+        };
+        reader.readAsDataURL(file);
+      };
+    }
+
+    if (clearAvatarButton) clearAvatarButton.onclick = () => { avatarBase64 = ''; updateModalAvatarPreview(''); clearAvatarButton.style.display = 'none'; };
+
+    const btnClose = document.getElementById('btn-close-profile-modal');
+    const btnCancel = document.getElementById('btn-cancel-profile-modal');
+    const btnSave = document.getElementById('btn-save-profile');
+    const btnLogout = document.getElementById('btn-logout-profile');
+
+    if (btnClose) btnClose.onclick = () => closeModal(modal);
+    if (btnCancel) btnCancel.onclick = () => closeModal(modal);
+    if (btnLogout) {
+      btnLogout.style.display = account.isRegistered ? '' : 'none';
+      btnLogout.onclick = async () => {
+        try { await window.lumoSupabase?.auth.signOut(); } catch (error) { console.warn('Supabase sign out failed:', error); }
+        saveUserAccount({ username: 'Guest', isRegistered: false, bio: 'Music enthusiast & audio explorer', avatar: '' });
+        closeModal(modal);
+        renderProfileView();
+        showToast('Logged out to Guest', 'info');
+      };
+    }
+
+    if (btnSave) {
+      btnSave.onclick = async () => {
+        const displayName = (inputNick?.value || '').trim();
+        const newBio = (inputBio?.value || '').trim();
+        const favoriteArtist = (inputGenres?.value || '').trim();
+        if (!displayName) {
+          if (errNick) { errNick.textContent = 'Display Name cannot be empty'; errNick.style.display = 'block'; }
+          return;
+        }
+        if (displayName.length > 50 || newBio.length > 280 || favoriteArtist.length > 100) {
+          if (errNick) { errNick.textContent = 'Display Name, bio, or favorite artist exceed the allowed length.'; errNick.style.display = 'block'; }
+          return;
+        }
+        btnSave.disabled = true;
+        try {
+          // Persist the avatar in user_metadata as well so it can be restored
+          // after a restart. Large base64 picks are skipped from metadata to
+          // avoid bloating the session token; the local profile still keeps them.
+          const avatarMeta = avatarBase64 && avatarBase64.length <= 100000 ? { avatar_url: avatarBase64 } : {};
+          const { data, error } = await window.lumoSupabase.auth.updateUser({
+            data: { username: account.authUsername || account.username, display_name: displayName, bio: newBio, favorite_artist: favoriteArtist, ...avatarMeta }
+          });
+          if (error) throw error;
+          const user = data?.user;
+          const email = String(user?.email || account.email || '').toLowerCase();
+          const registered = getRegisteredUsers();
+          const idx = registered.findIndex(item => (item.email || '').toLowerCase() === email);
+          const saved = {
+            ...(idx >= 0 ? registered[idx] : {}),
+            username: account.authUsername || account.username,
+            authUsername: account.authUsername || account.username,
+            displayName, email, isRegistered: true, bio: newBio || 'Music enthusiast & audio explorer',
+            avatar: avatarBase64, favoriteArtist, supabaseUserId: user?.id || account.supabaseUserId,
+            activity: 'Online'
+          };
+          if (idx >= 0) registered[idx] = saved; else registered.push(saved);
+          localStorage.setItem('lumo_registered_users', JSON.stringify(registered));
+          saveUserAccount({
+            ...account,
+            username: account.authUsername || account.username,
+            authUsername: account.authUsername || account.username,
+            displayName, email, isRegistered: true,
+            bio: saved.bio, avatar: avatarBase64, favoriteArtist,
+            supabaseUserId: user?.id || account.supabaseUserId
+          });
+          if (user?.id) {
+            const { error: profileSyncError } = await window.lumoSupabase.from('profiles').upsert({ id: user.id, username: account.authUsername || account.username, display_name: displayName, bio: saved.bio, favorite_artist: favoriteArtist, likes_visibility: account.likesVisibility || 'public', reposts_visibility: account.repostsVisibility || 'public' }, { onConflict: 'id' });
+            if (profileSyncError) console.warn('Profile cloud sync failed:', profileSyncError.message);
+          }
+          closeModal(modal);
+          showToast('Profile updated!', 'success');
+        } catch (error) {
+          if (errNick) { errNick.textContent = error?.message || 'Could not save the profile.'; errNick.style.display = 'block'; }
+        } finally { btnSave.disabled = false; }
+      };
+    }
+
+    openModal(modal);
+  }
+
+  function openRegisterModal(mode = 'register') {
+    const modal = document.getElementById('profile-register-modal');
+    const supabase = window.lumoSupabase;
+    if (!modal) return;
+    if (!supabase) { showToast('Account service is unavailable. Restart Lumo and try again.', 'error'); return; }
+    const inputName = document.getElementById('input-register-nickname');
+    const inputDisplayName = document.getElementById('input-register-display-name');
+    const displayNameField = document.getElementById('auth-display-name-field');
+    const inputPassword = document.getElementById('input-register-password');
+    const inputPasswordConfirm = document.getElementById('input-register-password-confirm');
+    const inputCode = document.getElementById('input-register-code');
+    const nameField = document.getElementById('auth-username-field');
+    const nameLabel = document.getElementById('auth-username-label');
+    const passwordField = document.getElementById('auth-password-field');
+    const passwordLabel = document.getElementById('auth-password-label');
+    const repeatField = document.getElementById('auth-repeat-password-field');
+    const repeatLabel = document.getElementById('auth-repeat-label');
+    const verificationField = document.getElementById('auth-verification-field');
+    const verificationLabel = document.getElementById('auth-code-label');
+    const forgotButton = document.getElementById('btn-forgot-password');
+    const errAuth = document.getElementById('register-nick-error');
+    const title = document.getElementById('register-modal-title');
+    const description = document.getElementById('auth-screen-description');
+    const btnClose = document.getElementById('btn-close-register-modal');
+    const btnCancel = document.getElementById('btn-cancel-register-modal');
+    const btnResend = document.getElementById('btn-resend-auth-code');
+    const btnSubmit = document.getElementById('btn-submit-register');
+    const modeButtons = Array.from(modal.querySelectorAll('[data-auth-mode]'));
+    let authMode = ['login', 'reset'].includes(mode) ? mode : 'register';
+    let codeSent = false;
+    let requestBusy = false;
+    const telegramBotUrl = 'https://t.me/LumoAuthBot';
+    [inputName, inputDisplayName, inputPassword, inputPasswordConfirm, inputCode].forEach(input => { if (input) { input.value = ''; input.disabled = false; } });
+
+    const showError = message => { if (errAuth) { errAuth.textContent = message; errAuth.classList.add('visible'); } };
+    const clearError = () => { if (errAuth) { errAuth.textContent = ''; errAuth.classList.remove('visible'); } };
+    const setMode = nextMode => {
+      authMode = ['login', 'reset'].includes(nextMode) ? nextMode : 'register';
+      codeSent = false;
+      if (inputCode) inputCode.value = '';
+      const isLogin = authMode === 'login';
+      const isReset = authMode === 'reset';
+      const isRegister = authMode === 'register';
+      [inputName, inputDisplayName, inputPassword, inputPasswordConfirm, inputCode].forEach(input => { if (input) input.disabled = false; });
+
+      displayNameField?.classList.toggle('hidden', !isRegister);
+      if (nameField) nameField.classList.remove('hidden');
+      if (passwordField) passwordField.classList.remove('hidden');
+      if (repeatField) repeatField.classList.toggle('hidden', isLogin);
+      if (verificationField) verificationField.classList.toggle('hidden', !isReset);
+
+      // Keep the visual field order per mode without touching the DOM.
+      const setOrder = (node, order) => { if (node) node.style.order = String(order); };
+      if (isRegister) {
+        setOrder(displayNameField, 1); setOrder(nameField, 2); setOrder(passwordField, 3); setOrder(repeatField, 4); setOrder(verificationField, 5);
+      } else if (isLogin) {
+        setOrder(nameField, 1); setOrder(passwordField, 2); setOrder(verificationField, 3);
+      } else {
+        setOrder(nameField, 1); setOrder(verificationField, 2); setOrder(passwordField, 3); setOrder(repeatField, 4);
+      }
+      if (errAuth) errAuth.style.order = '99';
+
+      if (nameLabel) nameLabel.textContent = 'Username';
+      if (inputName) inputName.placeholder = isLogin ? 'Enter username' : 'Username';
+      if (passwordLabel) passwordLabel.textContent = isReset ? 'New password' : 'Password';
+      if (repeatLabel) repeatLabel.textContent = isReset ? 'Repeat new password' : 'Repeat password';
+      if (inputPassword) {
+        inputPassword.autocomplete = isLogin ? 'current-password' : 'new-password';
+        inputPassword.placeholder = isLogin ? 'Your password' : 'At least 8 characters';
+      }
+      if (inputPasswordConfirm) inputPasswordConfirm.placeholder = isReset ? 'Repeat new password' : 'Repeat your password';
+      if (verificationLabel) verificationLabel.textContent = 'Telegram verification code';
+
+      if (title) title.textContent = isLogin ? 'Log In to Lumo' : (isReset ? 'Reset your password' : 'Create your account');
+      if (description) {
+        if (isReset) showTelegramCodeHelp('reset');
+        else if (isLogin) description.textContent = 'Log in with your username and password.';
+        else description.textContent = 'Create an account with your display name, username and password.';
+      }
+      if (forgotButton) forgotButton.classList.toggle('hidden', !isLogin);
+      if (btnResend) {
+        btnResend.classList.add('hidden');
+        btnResend.textContent = 'Open Telegram bot';
+      }
+      if (btnSubmit) btnSubmit.textContent = isLogin ? 'Log In' : (isReset ? 'Reset password' : 'Send code');
+      modeButtons.forEach(button => {
+        const selected = button.dataset.authMode === (isReset ? 'login' : authMode);
+        button.classList.toggle('active', selected);
+        button.setAttribute('aria-selected', String(selected));
+      });
+      clearError();
+    };
+    modeButtons.forEach(button => { button.onclick = () => setMode(button.dataset.authMode); });
+    setMode(authMode);
+    if (btnClose) btnClose.onclick = () => closeModal(modal);
+    if (btnCancel) btnCancel.onclick = () => closeModal(modal);
+    if (forgotButton) forgotButton.onclick = () => { setMode('reset'); inputName?.focus(); };
+
+    const eyeOpen = '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>';
+    const eyeClosed = eyeOpen + '<path d="m3 3 18 18"/>';
+    modal.querySelectorAll('[data-password-toggle]').forEach(button => {
+      const input = document.getElementById(button.dataset.passwordToggle);
+      if (!input) return;
+      button.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${eyeClosed}</svg>`;
+      button.onclick = () => {
+        const visible = input.type === 'password';
+        input.type = visible ? 'text' : 'password';
+        button.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${visible ? eyeOpen : eyeClosed}</svg>`;
+        button.setAttribute('aria-label', visible ? 'Hide password' : 'Show password');
+        button.title = visible ? 'Hide password' : 'Show password';
+      };
+    });
+
+    const authError = error => {
+      const message = error?.message || 'Could not complete this request.';
+      if (/invalid login credentials/i.test(message)) return 'Incorrect username or password.';
+      if (/already registered|user already/i.test(message)) return 'That username is already taken. Log in instead.';
+      if (/password.*(characters|short|weak)/i.test(message)) return 'Use a stronger password (at least 8 characters).';
+      if (/reset_password_with_telegram/i.test(message) && /could not find|does not exist|not exist|schema cache/i.test(message)) return 'Password reset is not configured yet.';
+      return message;
+    };
+    function showTelegramCodeHelp(purpose) {
+      if (!description) return;
+      const isReset = purpose === 'reset';
+      description.replaceChildren(document.createTextNode(isReset ? 'Get your six-digit recovery code from ' : 'Get your six-digit code from '));
+      const botLink = document.createElement('a');
+      botLink.className = 'auth-telegram-bot-link';
+      botLink.href = telegramBotUrl;
+      botLink.textContent = '@LumoAuthBot';
+      botLink.onclick = event => {
+        event.preventDefault();
+        window.electronAPI?.openExternal?.(telegramBotUrl);
+      };
+      description.append(botLink);
+      if (isReset) description.append(document.createTextNode(' and enter it with your username.'));
+      else if (purpose === 'register') description.append(document.createTextNode(', then enter it below to verify your account.'));
+      else description.append(document.createTextNode(', then enter it to log in.'));
+    }
+    const findTelegramAuthCode = async token => {
+      const { data: authCode, error: lookupError } = await supabase.from('telegram_auth_codes')
+        .select('code, telegram_id, username')
+        .eq('code', token)
+        .eq('used', false)
+        .gt('expires_at', new Date().toISOString())
+        .limit(1)
+        .maybeSingle();
+      if (lookupError) throw lookupError;
+      if (!authCode) throw new Error('Invalid or expired Telegram verification code.');
+      return authCode;
+    };
+    const consumeTelegramAuthCode = async token => {
+      const { data: consumedCode, error: consumeError } = await supabase.from('telegram_auth_codes')
+        .update({ used: true })
+        .eq('code', token)
+        .eq('used', false)
+        .gt('expires_at', new Date().toISOString())
+        .select('code')
+        .maybeSingle();
+      if (consumeError) throw consumeError;
+      if (!consumedCode) throw new Error('Invalid or expired Telegram verification code. Request a new code from the bot.');
+    };
+    const finishLogin = (user, message, extra = {}) => {
+      const email = String(user?.email || '').toLowerCase();
+      const metadata = user?.user_metadata || {};
+      const registered = getRegisteredUsers();
+      const index = registered.findIndex(item => (item.email || '').toLowerCase() === email);
+      const previous = index >= 0 ? registered[index] : {};
+      const username = metadata.username || previous.authUsername || previous.username || email.split('@')[0] || 'Listener';
+      const displayName = metadata.display_name || previous.displayName || previous.username || username;
+      const telegramId = extra.telegramId ?? metadata.telegram_id ?? previous.telegramId ?? null;
+      const profile = {
+        ...previous, username, displayName, authUsername: username, email, isRegistered: true, supabaseUserId: user.id,
+        bio: previous.bio || metadata.bio || 'Music enthusiast & audio explorer',
+        avatar: previous.avatar || metadata.avatar_url || '', favoriteArtist: previous.favoriteArtist || metadata.favorite_artist || '', activity: 'Online', telegramId
+      };
+      if (index >= 0) registered[index] = profile; else registered.push(profile);
+      localStorage.setItem('lumo_registered_users', JSON.stringify(registered));
+      saveUserAccount({ username, authUsername: username, displayName, email, isRegistered: true, bio: profile.bio, avatar: profile.avatar, favoriteArtist: profile.favoriteArtist, supabaseUserId: user.id, telegramId });
+      closeModal(modal);
+      showToast(message, 'success');
+    };
+    const emailFromUsername = username => `${String(username || '').trim().toLowerCase()}@lumo.app`;
+    const startCodeFlow = async () => {
+      const username = inputName?.value.trim() || '';
+      const password = inputPassword?.value || '';
+      if (username.length < 2 || username.length > 32 || !/^[a-zA-Z0-9_.-]+$/.test(username)) throw new Error('Use 2–32 letters, numbers, dots, dashes, or underscores for your username.');
+      if (password.length < 8) throw new Error('Password must be at least 8 characters.');
+      if (password !== (inputPasswordConfirm?.value || '')) throw new Error('Passwords do not match.');
+      const duplicate = getRegisteredUsers().some(item => (item.authUsername || item.username || '').toLowerCase() === username.toLowerCase());
+      if (duplicate) throw new Error('That username is already in use on this device. Choose another one.');
+      // Telegram delivers the code separately and stores it in
+      // telegram_auth_codes. Do not create a Supabase user until that code
+      // has been validated below.
+      inputName.disabled = true; inputDisplayName.disabled = true; inputPassword.disabled = true; inputPasswordConfirm.disabled = true;
+      codeSent = true;
+      verificationField?.classList.remove('hidden');
+      btnResend?.classList.remove('hidden');
+      if (btnSubmit) btnSubmit.textContent = 'Verify code';
+      showTelegramCodeHelp('register');
+      inputCode?.focus();
+    };
+
+    const doSubmit = async () => {
+      if (requestBusy) return;
+      clearError();
+      requestBusy = true;
+      if (btnSubmit) btnSubmit.disabled = true;
+      try {
+        if (authMode === 'login') {
+          const loginValue = inputName?.value.trim() || '';
+          const password = inputPassword?.value || '';
+          if (!loginValue) throw new Error('Enter your username.');
+          if (!password) throw new Error('Enter your password.');
+          const localProfile = getRegisteredUsers().find(item => (item.username || '').toLowerCase() === loginValue.toLowerCase() || (item.authUsername || '').toLowerCase() === loginValue.toLowerCase() || (item.email || '').toLowerCase() === loginValue.toLowerCase());
+          const email = localProfile?.email || (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(loginValue) ? loginValue : emailFromUsername(loginValue));
+          if (!codeSent) {
+            codeSent = true;
+            verificationField?.classList.remove('hidden');
+            btnResend?.classList.remove('hidden');
+            if (btnSubmit) btnSubmit.textContent = 'Verify code';
+            showTelegramCodeHelp('login');
+            if (inputName) inputName.disabled = true;
+            if (inputPassword) inputPassword.disabled = true;
+            inputCode?.focus();
+            return;
+          }
+          const token = inputCode?.value.trim() || '';
+          if (!/^\d{6}$/.test(token)) throw new Error('Enter the six-digit code from your Telegram bot.');
+          const authCode = await findTelegramAuthCode(token);
+          const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+          if (error) throw error;
+          let storedTelegramId = data.user?.user_metadata?.telegram_id ?? null;
+          if (storedTelegramId === null) {
+            // The profile row is the durable source of the Telegram binding.
+            try {
+              const { data: profileRow } = await supabase.from('profiles').select('telegram_id').eq('id', data.user.id).maybeSingle();
+              if (profileRow && profileRow.telegram_id !== null && profileRow.telegram_id !== undefined) storedTelegramId = profileRow.telegram_id;
+            } catch (lookupError) { console.warn('Could not read the Telegram binding:', lookupError?.message); }
+          }
+          if (storedTelegramId === null) storedTelegramId = localProfile?.telegramId ?? null;
+          if (storedTelegramId !== null && String(storedTelegramId) !== String(authCode.telegram_id)) {
+            await supabase.auth.signOut();
+            throw new Error('This verification code belongs to a different Telegram account.');
+          }
+          if (storedTelegramId === null) {
+            // First login on a legacy account: bind this Telegram account to it.
+            const { error: bindError } = await supabase.auth.updateUser({ data: { telegram_id: authCode.telegram_id, telegram_username: authCode.username || '' } });
+            if (bindError) throw bindError;
+            const { error: profileBindError } = await supabase.from('profiles')
+              .update({ telegram_id: String(authCode.telegram_id), telegram_username: authCode.username || '', updated_at: new Date().toISOString() })
+              .eq('id', data.user.id);
+            if (profileBindError) console.warn('Telegram binding sync failed:', profileBindError.message);
+          }
+          await consumeTelegramAuthCode(token);
+          finishLogin(data.user, `Logged in as ${data.user?.user_metadata?.display_name || email}!`, { telegramId: authCode.telegram_id });
+          return;
+        }
+        if (authMode === 'reset') {
+          const username = inputName?.value.trim() || '';
+          const token = inputCode?.value.trim() || '';
+          const newPassword = inputPassword?.value || '';
+          if (!username) throw new Error('Enter your username.');
+          if (!/^\d{6}$/.test(token)) throw new Error('Enter the six-digit code from your Telegram bot.');
+          if (newPassword.length < 8) throw new Error('Password must be at least 8 characters.');
+          if (newPassword !== (inputPasswordConfirm?.value || '')) throw new Error('Passwords do not match.');
+          const { error: resetError } = await supabase.rpc('reset_password_with_telegram', {
+            p_username: username,
+            p_code: token,
+            p_new_password: newPassword
+          });
+          if (resetError) throw resetError;
+          const resetEmail = emailFromUsername(username);
+          const { data, error } = await supabase.auth.signInWithPassword({ email: resetEmail, password: newPassword });
+          if (error) throw error;
+          finishLogin(data.user, 'Password reset. You are logged in.');
+          return;
+        }
+        if (!codeSent) { await startCodeFlow(); return; }
+        const email = emailFromUsername(inputName?.value.trim() || '');
+        const token = inputCode?.value.trim() || '';
+        if (!/^\d{6}$/.test(token)) throw new Error('Enter the six-digit code from your Telegram bot.');
+        if (authMode === 'register') {
+          const authCode = await findTelegramAuthCode(token);
+          const telegramId = String(authCode.telegram_id);
+          // One Telegram account may back at most one Lumo account.
+          const telegramTaken = getRegisteredUsers().some(item => item.telegramId !== undefined && item.telegramId !== null && String(item.telegramId) === telegramId);
+          if (telegramTaken) throw new Error('This Telegram account is already linked to another account. Log in instead.');
+
+          const username = inputName?.value.trim() || '';
+          const displayName = inputDisplayName?.value.trim() || username;
+          const password = inputPassword?.value || '';
+          const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: { data: { username, display_name: displayName, favorite_artist: '', telegram_id: authCode.telegram_id, telegram_username: authCode.username || '' } }
+          });
+          if (error) throw error;
+          if (!data?.user) throw new Error('The verification code was accepted, but Supabase did not create the account.');
+          if (!data.session) throw new Error('Account creation is blocked by Supabase confirmation settings.');
+          // Persist the binding to the profile row so the database enforces one
+          // Telegram account per Lumo account (unique index on profiles.telegram_id).
+          const { error: bindProfileError } = await supabase.from('profiles').upsert({
+            id: data.user.id,
+            username,
+            display_name: displayName,
+            telegram_id: telegramId,
+            telegram_username: authCode.username || ''
+          }, { onConflict: 'id' });
+          if (bindProfileError) {
+            if (bindProfileError.code === '23505' && /telegram/i.test(`${bindProfileError.message || ''} ${bindProfileError.details || ''}`)) {
+              await supabase.auth.signOut();
+              throw new Error('This Telegram account is already linked to another account. Log in instead.');
+            }
+            console.warn('Telegram binding sync failed:', bindProfileError.message);
+          }
+          await consumeTelegramAuthCode(token);
+          finishLogin(data.user, `Account verified. Welcome, ${data.user.user_metadata?.display_name || data.user.user_metadata?.username || email}!`, { telegramId: authCode.telegram_id });
+        }
+      } catch (error) { showError(authError(error)); }
+      finally { requestBusy = false; if (btnSubmit) btnSubmit.disabled = false; }
+    };
+    if (btnSubmit) btnSubmit.onclick = doSubmit;
+    if (btnResend) btnResend.onclick = () => { window.electronAPI?.openExternal?.(telegramBotUrl); };
+    [inputName, inputDisplayName, inputPassword, inputPasswordConfirm, inputCode].forEach(input => {
+      if (input) input.onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); doSubmit(); } };
+    });
+    openModal(modal);
+    inputName?.focus();
+  }
+
+  function openPinTrackModal() {
+    const myAccount = getUserAccount();
+    if (state.viewingProfileUser && state.viewingProfileUser.username.toLowerCase() !== myAccount.username.toLowerCase()) return;
+    if (!myAccount.isRegistered) { openRegisterModal('register'); return; }
+    const modal = document.getElementById('pin-track-modal');
+    const list = document.getElementById('pin-tracks-picker-list');
+    const btnClose = document.getElementById('btn-close-pin-modal');
+    const btnCancel = document.getElementById('btn-cancel-pin-modal');
+    if (!modal || !list) return;
+
+    list.innerHTML = '';
+    const pool = [];
+    const seen = new Set();
+    [...(state.favorites || []), ...(Array.isArray(state.history) ? state.history : [])].forEach(t => {
+      if (!t) return;
+      const id = (typeof getTrackCanonicalId === 'function' ? getTrackCanonicalId(t) : '') || t.id;
+      if (!id || seen.has(id)) return;
+      seen.add(id);
+      pool.push(t);
+    });
+
+    if (pool.length === 0) {
+      list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--md-sys-color-outline);">No songs found in Favorites or History to pin.</div>';
+    } else {
+      pool.forEach(t => {
+        const item = document.createElement('div');
+        item.style.cssText = 'display:flex;align-items:center;gap:12px;padding:10px 14px;border-radius:12px;cursor:pointer;transition:background 0.15s;';
+        item.onmouseenter = () => item.style.background = 'var(--md-sys-color-surface-container-high)';
+        item.onmouseleave = () => item.style.background = 'transparent';
+        const thumb = (typeof getTrackThumbUrl === 'function' ? getTrackThumbUrl(t) : '') || t.thumbnail || '';
+        item.innerHTML = `
+          <img src="${escapeHtml(thumb)}" style="width:40px;height:40px;border-radius:8px;object-fit:cover;" onerror="this.style.visibility='hidden'">
+          <div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px;">
+            <span style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(t.title || 'Untitled')}</span>
+            <span style="font-size:11px;color:var(--md-sys-color-outline);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(t.artist || 'Unknown artist')}</span>
+          </div>
+        `;
+        item.addEventListener('click', () => {
+          if (!getUserAccount().isRegistered) {
+            closeModal(modal);
+            openRegisterModal('register');
+            return;
+          }
+          localStorage.setItem('lumo_pinned_track', JSON.stringify(t));
+          closeModal(modal);
+          renderProfileView();
+          showToastNow(`Set "${t.title || 'track'}" as your favorite song`, 'success');
+        });
+        list.appendChild(item);
+      });
+    }
+
+    if (btnClose) btnClose.onclick = () => closeModal(modal);
+    if (btnCancel) btnCancel.onclick = () => closeModal(modal);
+    openModal(modal);
+  }
+
+  let activeProfileTab = 'liked';
+  function setupProfileTabs() {
+    const tabs = document.querySelectorAll('.profile-tab');
+    tabs.forEach(tab => {
+      if (tab._bound) return;
+      tab._bound = true;
+      tab.addEventListener('click', () => {
+        tabs.forEach(t => t.classList.toggle('active', t === tab));
+        activeProfileTab = tab.dataset.tab;
+        renderActiveProfileTabContent();
+      });
+    });
+    renderActiveProfileTabContent();
+  }
+
+  function renderActiveProfileTabContent() {
+    const tracksContainer = document.getElementById('profile-tracks-list');
+    const plContainer = document.getElementById('profile-playlists-list');
+    const frContainer = document.getElementById('profile-friends-list');
+
+    if (!tracksContainer || !plContainer || !frContainer) return;
+
+    const viewingRemoteProfile = !!state.viewingProfileUser && state.viewingProfileUser.username?.toLowerCase() !== getUserAccount().username?.toLowerCase();
+    if (viewingRemoteProfile) {
+      tracksContainer.style.display = '';
+      plContainer.style.display = 'none';
+      frContainer.style.display = 'none';
+      const visibility = activeProfileTab === 'liked'
+        ? (state.viewingProfileUser.likesVisibility || 'public')
+        : (state.viewingProfileUser.repostsVisibility || 'public');
+      const isFriend = getUserFriends().some(friend => friend.supabaseUserId && friend.supabaseUserId === state.viewingProfileUser.supabaseUserId);
+      if (['liked', 'reposts'].includes(activeProfileTab) && (visibility === 'private' || (visibility === 'friends' && !isFriend))) {
+        tracksContainer.innerHTML = `<div class="empty-hint">${visibility === 'friends' ? 'This activity is visible to friends only.' : 'This activity is private.'}</div>`;
+      } else {
+        tracksContainer.innerHTML = '<div class="empty-hint">This profile’s activity is not synced to Lumo yet.</div>';
+      }
+      return;
+    }
+
+    if (activeProfileTab === 'liked') {
+      tracksContainer.style.display = '';
+      plContainer.style.display = 'none';
+      frContainer.style.display = 'none';
+      renderTracks(tracksContainer, state.favorites || [], 'favorites');
+    } else if (activeProfileTab === 'reposts') {
+      tracksContainer.style.display = '';
+      plContainer.style.display = 'none';
+      frContainer.style.display = 'none';
+      const repTracks = getTrackReposts();
+      const repPlaylists = getPlaylistReposts();
+      if (!repTracks.length && !repPlaylists.length) {
+        tracksContainer.innerHTML = '<div class="empty-hint">No reposted tracks or playlists yet. Click the 3 dots on any track or playlist to repost!</div>';
+      } else {
+        tracksContainer.innerHTML = '';
+        if (repPlaylists.length > 0) {
+          const plHeader = document.createElement('h3');
+          plHeader.style.cssText = 'margin:12px 0 8px 12px;font-size:14px;font-weight:700;color:var(--md-sys-color-primary);text-transform:uppercase;letter-spacing:0.5px;';
+          plHeader.textContent = 'Reposted Playlists';
+          tracksContainer.appendChild(plHeader);
+
+          const plGrid = document.createElement('div');
+          plGrid.className = 'profile-reposted-playlists-grid';
+          plGrid.style.cssText = 'display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:16px;padding:0 12px 16px 12px;';
+          repPlaylists.forEach(pl => {
+            const card = document.createElement('div');
+            card.className = 'mix-card profile-repost-card';
+            const cover = pl.cover || '';
+            card.innerHTML = `
+              <div class="mix-cover-wrap">
+                <img class="mix-cover" src="${escapeHtml(cover)}" alt="" onerror="this.style.visibility='hidden'">
+              </div>
+              <div class="mix-info">
+                <span class="mix-title">${escapeHtml(pl.name || 'Untitled')}</span>
+                <span class="mix-sub">${pl.trackCount || 0} songs</span>
+              </div>
+            `;
+            card.addEventListener('click', () => openPlaylistDetail(pl.id));
+            plGrid.appendChild(card);
+          });
+          tracksContainer.appendChild(plGrid);
+        }
+        if (repTracks.length > 0) {
+          if (repPlaylists.length > 0) {
+            const trHeader = document.createElement('h3');
+            trHeader.style.cssText = 'margin:12px 0 8px 12px;font-size:14px;font-weight:700;color:var(--md-sys-color-primary);text-transform:uppercase;letter-spacing:0.5px;';
+            trHeader.textContent = 'Reposted Tracks';
+            tracksContainer.appendChild(trHeader);
+          }
+          const trWrap = document.createElement('div');
+          tracksContainer.appendChild(trWrap);
+          renderTracks(trWrap, repTracks, 'reposts');
+        }
+      }
+    } else if (activeProfileTab === 'playlists') {
+      tracksContainer.style.display = 'none';
+      plContainer.style.display = 'grid';
+      frContainer.style.display = 'none';
+      plContainer.innerHTML = '';
+      const favPls = getFavoritePlaylists();
+      const allPls = [...favPls];
+      const seenIds = new Set(favPls.map(p => p.id));
+      (state.playlists || []).forEach(p => {
+        if (!seenIds.has(p.id)) {
+          seenIds.add(p.id);
+          allPls.push(p);
+        }
+      });
+      if (!allPls.length) {
+        plContainer.innerHTML = '<div class="empty-hint" style="grid-column:1/-1;">No favorite playlists yet. Click the heart on any playlist to favorite it!</div>';
+      } else {
+        allPls.forEach(pl => {
+          const card = document.createElement('div');
+          card.className = 'mix-card';
+          const cover = (pl.cover) || ((pl.tracks && pl.tracks[0]) ? (typeof getTrackThumbUrl === 'function' ? getTrackThumbUrl(pl.tracks[0]) : (pl.tracks[0].thumbnail || '')) : '');
+          const isFav = isPlaylistFavorited(pl.id);
+          card.innerHTML = `
+            <div class="mix-cover-wrap">
+              <img class="mix-cover" src="${escapeHtml(cover || '')}" alt="" onerror="this.style.visibility='hidden'">
+            </div>
+            <div class="mix-info">
+              <span class="mix-title">${escapeHtml(pl.name || 'Untitled')}${isFav ? ' <span style="color:#ff3b5c;font-size:11px;">❤</span>' : ''}</span>
+              <span class="mix-sub">${(pl.tracks || []).length || pl.trackCount || 0} songs</span>
+            </div>
+          `;
+          card.addEventListener('click', () => { openPlaylistDetail(pl.id); });
+          plContainer.appendChild(card);
+        });
+      }
+    } else if (activeProfileTab === 'friends') {
+      tracksContainer.style.display = 'none';
+      plContainer.style.display = 'none';
+      frContainer.style.display = 'flex';
+      frContainer.style.flexDirection = 'column';
+
+      const cardsContainer = document.getElementById('friends-cards-container');
+      const inputAddFriend = document.getElementById('input-add-friend-name');
+      const btnAddFriend = document.getElementById('btn-add-friend');
+
+      async function refreshCloudProfiles() {
+        const supabase = window.lumoSupabase;
+        if (!supabase || !getUserAccount().isRegistered) return;
+        try {
+          const { data, error } = await supabase.from('profiles').select('id,username,display_name,bio,avatar_url,verified,supporter,spotlight,likes_visibility,reposts_visibility').limit(500);
+          if (error) throw error;
+          const ownId = getUserAccount().supabaseUserId;
+          // Merge cloud profiles into the local list instead of replacing it.
+          // Replacing it dropped the signed-in user's own entry (and any local
+          // avatar), which made the avatar vanish after a restart.
+          const byUsername = new Map(getRegisteredUsers().map(user => [String(user.username || '').toLowerCase(), user]));
+          (data || []).filter(row => row.id !== ownId && row.username).forEach(row => {
+            const key = String(row.username).toLowerCase();
+            const previous = byUsername.get(key) || {};
+            byUsername.set(key, {
+              ...previous,
+              username: row.username, authUsername: row.username, displayName: row.display_name || row.username,
+              bio: row.bio || previous.bio || '', avatar: row.avatar_url || previous.avatar || '', supabaseUserId: row.id, verified: !!row.verified, bugHunter: !!row.supporter, alphaTester: !!row.spotlight,
+              likesVisibility: row.likes_visibility || 'public', repostsVisibility: row.reposts_visibility || 'public'
+            });
+          });
+          const users = Array.from(byUsername.values());
+          localStorage.setItem('lumo_registered_users', JSON.stringify(users));
+          if (ownId) {
+            const { data: links, error: linksError } = await supabase.from('friendships').select('user_id,friend_id').or(`user_id.eq.${ownId},friend_id.eq.${ownId}`);
+            if (!linksError && links) {
+              const ids = new Set(links.map(link => link.user_id === ownId ? link.friend_id : link.user_id));
+              saveUserFriends(users.filter(user => ids.has(user.supabaseUserId)));
+              renderFriendCards();
+            }
+          }
+          const dropdown = document.getElementById('friend-autocomplete-dropdown');
+          if (dropdown && inputAddFriend?.value.trim()) inputAddFriend.dispatchEvent(new Event('input'));
+        } catch (error) { console.warn('Could not load registered profiles:', error.message || error); }
+      }
+      refreshCloudProfiles();
+
+      function renderFriendCards() {
+        if (!cardsContainer) return;
+        cardsContainer.innerHTML = '';
+        const friends = getUserFriends();
+        const elStatFr = document.getElementById('profile-stat-friends');
+        if (elStatFr) elStatFr.textContent = String(friends.length);
+
+        if (friends.length === 0) {
+          cardsContainer.innerHTML = `
+            <div style="grid-column: 1 / -1; padding: 32px 16px; text-align: center; color: var(--md-sys-color-outline); font-size: 13px;">
+              No friends added yet. Type a friend's nickname above and click "Add Friend" to connect!
+            </div>
+          `;
+          return;
+        }
+
+        friends.forEach(friend => {
+          const card = document.createElement('div');
+          card.className = 'friend-card';
+          card.style.cursor = 'pointer';
+          card.addEventListener('click', (e) => {
+            if (e.target.closest('.btn-remove-friend')) return;
+            state.viewingProfileUser = friend;
+            renderProfileView();
+          });
+          const initial = (friend.username || 'F').charAt(0).toUpperCase();
+          const avatarHtml = friend.avatar ? `<img src="${escapeHtml(friend.avatar)}" style="width:44px;height:44px;border-radius:50%;object-fit:cover;">` : `<div class="friend-avatar">${initial}</div>`;
+          card.innerHTML = `
+            ${avatarHtml}
+            <div class="friend-meta">
+              <span class="friend-name">${escapeHtml(friend.displayName || friend.username)}</span><span class="friend-activity">@${escapeHtml(friend.username)}</span>
+              <span class="friend-activity">${escapeHtml(friend.activity || friend.bio || 'Online')}</span>
+            </div>
+            <button class="btn-remove-friend" title="Remove friend" aria-label="Remove friend">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+          `;
+          const btnRemove = card.querySelector('.btn-remove-friend');
+          if (btnRemove) {
+            btnRemove.addEventListener('click', (e) => {
+              e.stopPropagation();
+              const updated = getUserFriends().filter(f => f.username.toLowerCase() !== friend.username.toLowerCase());
+              const account = getUserAccount();
+              if (account.supabaseUserId && friend.supabaseUserId) window.lumoSupabase?.from('friendships').delete().eq('user_id', account.supabaseUserId).eq('friend_id', friend.supabaseUserId).then(({ error }) => { if (error) console.warn('Friend removal cloud sync failed:', error.message); });
+              saveUserFriends(updated);
+              renderFriendCards();
+              showToastNow(`Removed ${friend.username} from friends`, 'info');
+            });
+          }
+          cardsContainer.appendChild(card);
+        });
+      }
+
+      const dropdown = document.getElementById('friend-autocomplete-dropdown');
+      if (inputAddFriend && dropdown && !inputAddFriend._autocompleteBound) {
+        inputAddFriend._autocompleteBound = true;
+
+        const closeDropdown = () => {
+          dropdown.classList.add('hidden');
+          dropdown.innerHTML = '';
+        };
+
+        inputAddFriend.addEventListener('input', () => {
+          const q = inputAddFriend.value.trim().toLowerCase();
+          if (!q) {
+            closeDropdown();
+            return;
+          }
+          const account = getUserAccount();
+          const registered = getRegisteredUsers();
+          const matches = registered.filter(u => {
+            if (account.isRegistered && u.username.toLowerCase() === account.username.toLowerCase()) return false;
+            const uname = String(u.username || '').toLowerCase();
+            const dname = String(u.displayName || '').toLowerCase();
+            return uname.includes(q) || dname.includes(q);
+          }).sort((a, b) => {
+            const aStarts = String(a.displayName || '').toLowerCase().startsWith(q) || String(a.username || '').toLowerCase().startsWith(q);
+            const bStarts = String(b.displayName || '').toLowerCase().startsWith(q) || String(b.username || '').toLowerCase().startsWith(q);
+            if (aStarts && !bStarts) return -1;
+            if (!aStarts && bStarts) return 1;
+            return a.username.localeCompare(b.username);
+          });
+
+          if (!matches.length) {
+            closeDropdown();
+            return;
+          }
+
+          dropdown.innerHTML = '';
+          matches.slice(0, 6).forEach(u => {
+            const item = document.createElement('div');
+            item.className = 'friend-autocomplete-item';
+            const initial = (u.username || 'U').charAt(0).toUpperCase();
+            const avatarHtml = u.avatar ? `<img src="${escapeHtml(u.avatar)}" class="friend-autocomplete-avatar">` : `<div class="friend-autocomplete-avatar">${initial}</div>`;
+            item.innerHTML = `
+              ${avatarHtml}
+              <div class="friend-autocomplete-info">
+                <span class="friend-autocomplete-name">${escapeHtml(u.displayName || u.username)}</span>
+                <span class="friend-autocomplete-bio">@${escapeHtml(u.username)}${u.bio ? ` · ${escapeHtml(u.bio)}` : ''}</span>
+              </div>
+            `;
+            item.addEventListener('click', () => {
+              inputAddFriend.value = u.username;
+              closeDropdown();
+              doAddFriend();
+            });
+            dropdown.appendChild(item);
+          });
+          dropdown.classList.remove('hidden');
+        });
+
+        document.addEventListener('click', (e) => {
+          if (!inputAddFriend.contains(e.target) && !dropdown.contains(e.target)) {
+            closeDropdown();
+          }
+        });
+      }
+
+      if (btnAddFriend && !btnAddFriend._bound) {
+        btnAddFriend._bound = true;
+        const doAddFriend = () => {
+          const targetNick = (inputAddFriend ? inputAddFriend.value.trim() : '');
+          if (!targetNick) {
+            showToast('Please enter a friend nickname', 'warning');
+            return;
+          }
+          const account = getUserAccount();
+          if (!account.isRegistered) {
+            showToast('Please register an account first to add friends', 'info');
+            openRegisterModal();
+            return;
+          }
+          if (targetNick.toLowerCase() === account.username.toLowerCase()) {
+            showToast('You cannot add yourself as a friend', 'warning');
+            return;
+          }
+          const currentFriends = getUserFriends();
+          const registered = getRegisteredUsers();
+          let target = registered.find(u => u.username.toLowerCase() === targetNick.toLowerCase());
+          if (!target) {
+            target = registered.find(u => u.username.toLowerCase().startsWith(targetNick.toLowerCase()));
+          }
+          if (!target) {
+            target = registered.find(u => u.username.toLowerCase().includes(targetNick.toLowerCase()));
+          }
+          if (!target) {
+            showToast(`User "${targetNick}" was not found.`, 'error');
+            return;
+          }
+          if (currentFriends.some(f => f.username.toLowerCase() === target.username.toLowerCase())) {
+            showToast(`${target.username} is already in your friends list`, 'info');
+            return;
+          }
+
+          currentFriends.push({
+            username: target.username,
+            displayName: target.displayName || target.username,
+            bio: target.bio || '',
+            avatar: target.avatar || '',
+            activity: target.activity || 'Online'
+          });
+          saveUserFriends(currentFriends);
+          const supabase = window.lumoSupabase;
+          const ownId = account.supabaseUserId, friendId = target.supabaseUserId;
+          if (supabase && ownId && friendId) supabase.from('friendships').upsert({ user_id: ownId, friend_id: friendId }, { onConflict: 'user_id,friend_id' }).then(({ error }) => { if (error) console.warn('Friend cloud sync failed:', error.message); });
+          if (inputAddFriend) inputAddFriend.value = '';
+          const dropdownEl = document.getElementById('friend-autocomplete-dropdown');
+          if (dropdownEl) dropdownEl.classList.add('hidden');
+          renderFriendCards();
+          showToastNow(`Added ${target.username} to your friends!`, 'success');
+        };
+
+        btnAddFriend.addEventListener('click', doAddFriend);
+        if (inputAddFriend) {
+          inputAddFriend.addEventListener('keydown', (e) => {
+            const dropdownEl = document.getElementById('friend-autocomplete-dropdown');
+            const items = dropdownEl && !dropdownEl.classList.contains('hidden') ? Array.from(dropdownEl.querySelectorAll('.friend-autocomplete-item')) : [];
+            if (e.key === 'ArrowDown' && items.length > 0) {
+              e.preventDefault();
+              const selIdx = items.findIndex(it => it.classList.contains('selected'));
+              const nextIdx = selIdx < items.length - 1 ? selIdx + 1 : 0;
+              items.forEach((it, i) => it.classList.toggle('selected', i === nextIdx));
+              return;
+            }
+            if (e.key === 'ArrowUp' && items.length > 0) {
+              e.preventDefault();
+              const selIdx = items.findIndex(it => it.classList.contains('selected'));
+              const prevIdx = selIdx > 0 ? selIdx - 1 : items.length - 1;
+              items.forEach((it, i) => it.classList.toggle('selected', i === prevIdx));
+              return;
+            }
+            if (e.key === 'Escape') {
+              if (dropdownEl) dropdownEl.classList.add('hidden');
+              return;
+            }
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              const selectedItem = items.find(it => it.classList.contains('selected'));
+              if (selectedItem) {
+                selectedItem.click();
+                return;
+              }
+              doAddFriend();
+            }
+          });
+        }
+      }
+
+      renderFriendCards();
+    }
+  }
+
+  function renderDynamicDiscoverSections() {
+    const secWrap = document.getElementById('riff-dynamic-sections');
+    if (!secWrap) return;
+    secWrap.style.display = '';
+
+    const quickGrid = document.getElementById('riff-quick-picks-grid');
+    if (quickGrid) {
+      quickGrid.innerHTML = '';
+      const favCount = (state.favorites || []).length;
+      const likedTile = document.createElement('div');
+      likedTile.className = 'sp-tile';
+      likedTile.innerHTML = `
+        <div class="sp-heart">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>
+          </svg>
+        </div>
+        <div class="sp-tile-text">
+          <div class="sp-tile-title sp-fade">Liked songs</div>
+          ${favCount > 0 ? `<div class="sp-tile-sub sp-fade">${favCount} songs</div>` : ''}
+        </div>
+      `;
+      likedTile.addEventListener('click', () => switchView('favorites'));
+      quickGrid.appendChild(likedTile);
+
+      (state.playlists || []).slice(0, 2).forEach(pl => {
+        const plTile = document.createElement('div');
+        plTile.className = 'sp-tile';
+        const cover = pl.cover || (pl.tracks && pl.tracks[0] ? getTrackThumbUrl(pl.tracks[0]) : '');
+        plTile.innerHTML = `
+          <img class="sp-tile-img" src="${escapeHtml(cover || '')}" alt="" onerror="this.style.visibility='hidden'">
+          <div class="sp-tile-text">
+            <div class="sp-tile-title sp-fade">${escapeHtml(pl.name || 'Playlist')}</div>
+            <div class="sp-tile-sub sp-fade">${(pl.tracks || []).length} songs</div>
+          </div>
+        `;
+        plTile.addEventListener('click', () => openPlaylistDetail(pl.id));
+        quickGrid.appendChild(plTile);
+      });
+
+      let sample = [...(state.favorites || []), ...(Array.isArray(state.history) ? state.history : [])].slice(0, 3);
+      if (sample.length === 0) {
+        const trCache = safeJson('lumo_trending_cache', null);
+        if (trCache && Array.isArray(trCache.tracks)) {
+          sample = trCache.tracks.slice(0, 3);
+        }
+      }
+      sample.forEach(track => {
+        const tTile = document.createElement('div');
+        tTile.className = 'sp-tile';
+        const thumb = getTrackThumbUrl(track) || track.thumbnail || '';
+        tTile.innerHTML = `
+          <img class="sp-tile-img" src="${escapeHtml(thumb)}" alt="" onerror="this.style.visibility='hidden'">
+          <div class="sp-tile-text">
+            <div class="sp-tile-title sp-fade">${escapeHtml(track.title || 'Untitled')}</div>
+            <div class="sp-tile-sub sp-fade">${escapeHtml(track.artist || 'Unknown artist')}</div>
+          </div>
+        `;
+        const sub = tTile.querySelector('.sp-tile-sub');
+        if (sub && track.artist && !/^unknown artist$/i.test(track.artist)) {
+          sub.style.cursor = 'pointer';
+          sub.title = `View artist: ${track.artist}`;
+          sub.addEventListener('click', (e) => {
+            e.stopPropagation();
+            if (typeof openArtistProfile === 'function') {
+              openArtistProfile(track.artist);
+            }
+          });
+        }
+        tTile.addEventListener('click', () => playTrack(track, sample));
+        quickGrid.appendChild(tTile);
+      });
+    }
+
+    const trendingRow = document.getElementById('riff-trending-row');
+    if (trendingRow && typeof renderTrendingCards === 'function') {
+      const trCache = safeJson('lumo_trending_cache', null);
+      let tTracks = window._cachedTrendingTracks || (trCache && trCache.tracks) || (state.searchResults && state.searchResults.slice(0, 10)) || [];
+      if (tTracks.length > 0) {
+        renderTrendingCards(trendingRow, tTracks);
+      }
+      fetch(`http://127.0.0.1:${state.serverPort}/api/trending`).then(r => r.json()).then(data => {
+        if (data && Array.isArray(data.tracks) && data.tracks.length > 0) {
+          window._cachedTrendingTracks = data.tracks;
+          try { localStorage.setItem('lumo_trending_cache', JSON.stringify({ ts: Date.now(), tracks: data.tracks })); } catch (_) {}
+          renderTrendingCards(trendingRow, data.tracks);
+        }
+      }).catch(() => {});
+    }
+
+    const popularRow = document.getElementById('riff-popular-row');
+    if (popularRow && typeof renderTrendingCards === 'function') {
+      let popTracks = (state.favorites && state.favorites.length >= 4) ? state.favorites.slice(0, 10) : [];
+      if (!popTracks || popTracks.length < 4) {
+        const mixes = safeJson('lumo_daily_mixes', null);
+        if (mixes && Array.isArray(mixes)) {
+          popTracks = mixes.flatMap(m => m.tracks || []).slice(0, 10);
+        }
+      }
+      if (!popTracks || popTracks.length < 4) {
+        const trCache = safeJson('lumo_trending_cache', null);
+        popTracks = window._cachedTrendingTracks || (trCache && trCache.tracks ? trCache.tracks.slice(0, 10) : []) || (state.searchResults || []).slice(0, 10);
+      }
+      if (popTracks && popTracks.length > 0) {
+        renderTrendingCards(popularRow, popTracks);
+      }
+    }
+
+    const recentRow = document.getElementById('riff-recently-played-row');
+    if (recentRow && typeof renderTrendingCards === 'function') {
+      let hist = (Array.isArray(state.history) ? state.history : []).slice(0, 10);
+      if (!hist || hist.length === 0) {
+        const mixes = safeJson('lumo_daily_mixes', null);
+        if (mixes && Array.isArray(mixes)) {
+          hist = mixes.flatMap(m => m.tracks || []).slice(5, 15);
+        }
+      }
+      if (!hist || hist.length === 0) {
+        const trCache = safeJson('lumo_trending_cache', null);
+        hist = (trCache && trCache.tracks ? trCache.tracks.slice(4, 14) : []) || (state.searchResults || []).slice(4, 14);
+      }
+      if (hist && hist.length > 0) {
+        renderTrendingCards(recentRow, hist);
+      }
+    }
   }
 
   function applyStackedRadius(container, itemSelector, horizontal) {
@@ -11284,6 +13768,9 @@ function updateNavIndicator(animate) {
       if (el.pauseIcon) el.pauseIcon.classList.remove('hidden');
       setPlayPauseState(actuallyPlaying, true);
     }
+    if (typeof updatePlaylistPlayButtonState === 'function') updatePlaylistPlayButtonState();
+    if (typeof updateAlbumPlayButtonState === 'function') updateAlbumPlayButtonState();
+    if (typeof updatePinnedPlayButtonState === 'function') updatePinnedPlayButtonState();
   }
 
   setPlayPauseState(false, false);
@@ -11298,7 +13785,7 @@ function updateNavIndicator(animate) {
   if (el.btnResetVfx) {
     el.btnResetVfx.addEventListener('click', () => {
       state.vfx = { ...defaultVfx };
-      localStorage.setItem('devsize_vfx', JSON.stringify(state.vfx));
+      localStorage.setItem('lumo_vfx', JSON.stringify(state.vfx));
       applyVisualEffects();
     });
   }
@@ -11309,13 +13796,436 @@ function updateNavIndicator(animate) {
     if (el.btnClose) el.btnClose.addEventListener('click', () => window.electronAPI.closeWindow());
   }
 
+  // ---- Listening statistics ---------------------------------------------
+  // Counts real wall-clock time while audio is actually playing, grouped by
+  // local day, hour of day and artist. Everything stays in localStorage.
+  const LISTEN_STATS_KEY = 'lumo_listen_stats_v1';
+  const LISTEN_STATS_PERIOD_KEY = 'lumo_stats_period';
+  let listenStats = null;
+  let listenStatsDirty = false;
+  let listenStatsLastTick = 0;
+  let listenStatsLastFlush = 0;
+  let statsPeriod = localStorage.getItem(LISTEN_STATS_PERIOD_KEY) || 'today';
+
+  function loadListenStats() {
+    if (listenStats) return listenStats;
+    const parsed = safeJson(LISTEN_STATS_KEY, null);
+    listenStats = (parsed && typeof parsed === 'object' && parsed.days && typeof parsed.days === 'object')
+      ? parsed
+      : { days: {} };
+    if (!listenStats.trackMeta || typeof listenStats.trackMeta !== 'object') listenStats.trackMeta = {};
+    if (!listenStats.days || typeof listenStats.days !== 'object') listenStats.days = {};
+    return listenStats;
+  }
+
+  function flushListenStats(force) {
+    if (!listenStats) return;
+    if (!listenStatsDirty && !force) return;
+    try {
+      const out = { days: {}, trackMeta: {} };
+      Object.keys(listenStats.days).forEach(dayKey => {
+        const day = listenStats.days[dayKey];
+        if (!day || !(day.seconds > 0.5)) return;
+        const artists = {};
+        Object.keys(day.artists || {}).forEach(key => {
+          const artist = day.artists[key];
+          const seconds = Math.round(artist && artist.seconds || 0);
+          if (seconds > 0) artists[key] = { name: artist.name || key, seconds, thumb: artist.thumb || '' };
+        });
+        const tracks = {};
+        Object.keys(day.tracks || {}).forEach(key => {
+          const seconds = Math.round(day.tracks[key] || 0);
+          if (seconds > 0) tracks[key] = seconds;
+        });
+        out.days[dayKey] = {
+          seconds: Math.round(day.seconds),
+          hours: (day.hours || []).map(v => Math.round(v || 0)),
+          artists,
+          tracks
+        };
+      });
+      // Keep the per-track catalog bounded so storage does not grow forever.
+      let metaKeys = Object.keys(listenStats.trackMeta || {});
+      if (metaKeys.length > 1500) {
+        metaKeys = metaKeys.sort((a, b) => (listenStats.trackMeta[b].lastPlayed || 0) - (listenStats.trackMeta[a].lastPlayed || 0));
+        metaKeys = metaKeys.slice(0, 1200);
+      }
+      metaKeys.forEach(key => { out.trackMeta[key] = listenStats.trackMeta[key]; });
+      localStorage.setItem(LISTEN_STATS_KEY, JSON.stringify(out));
+      listenStatsDirty = false;
+    } catch (e) {}
+  }
+
+  function statsCompactTrack(track) {
+    if (!track) return null;
+    const copy = {};
+    ['id', 'title', 'artist', 'thumbnail', 'cover', 'platform', 'duration', 'url', 'isLocal', 'file', 'filename', 'path', 'album', 'albumId', 'source', 'permalink', 'uri', 'videoId', 'soundcloudId'].forEach(key => {
+      const value = track[key];
+      if (value !== undefined && value !== null && value !== '') copy[key] = value;
+    });
+    copy.lastPlayed = Date.now();
+    return copy;
+  }
+
+  function statsDayKey(date) {
+    const d = date || new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  }
+
+  function statsArtistKey(name) {
+    const clean = String(name || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    return clean || 'unknown artist';
+  }
+
+  function ensureStatsDay(key) {
+    const stats = loadListenStats();
+    if (!stats.days[key]) stats.days[key] = { seconds: 0, hours: new Array(24).fill(0), artists: {}, tracks: {} };
+    const day = stats.days[key];
+    if (!Array.isArray(day.hours) || day.hours.length !== 24) day.hours = new Array(24).fill(0);
+    if (!day.artists || typeof day.artists !== 'object') day.artists = {};
+    if (!day.tracks || typeof day.tracks !== 'object') day.tracks = {};
+    if (typeof day.seconds !== 'number') day.seconds = 0;
+    return day;
+  }
+
+  function addListenTime(seconds, track) {
+    if (!(seconds > 0) || !track) return;
+    const now = new Date();
+    const stats = loadListenStats();
+    const day = ensureStatsDay(statsDayKey(now));
+    const artistName = String(track.artist || 'Unknown artist').trim() || 'Unknown artist';
+    const artistKey = statsArtistKey(artistName);
+    const thumb = track.thumbnail || track.cover || '';
+    day.seconds += seconds;
+    day.hours[now.getHours()] += seconds;
+    if (!day.artists[artistKey]) day.artists[artistKey] = { name: artistName, seconds: 0, thumb };
+    day.artists[artistKey].seconds += seconds;
+    if (!day.artists[artistKey].thumb && thumb) day.artists[artistKey].thumb = thumb;
+
+    const trackKey = (typeof getTrackCanonicalId === 'function' ? getTrackCanonicalId(track) : '')
+      || `${artistKey}::${String(track.title || '').trim().toLowerCase()}`;
+    day.tracks[trackKey] = (day.tracks[trackKey] || 0) + seconds;
+    if (!stats.trackMeta) stats.trackMeta = {};
+    if (!stats.trackMeta[trackKey]) stats.trackMeta[trackKey] = statsCompactTrack(track);
+    else stats.trackMeta[trackKey].lastPlayed = Date.now();
+    listenStatsDirty = true;
+  }
+
+  function tickListeningStats() {
+    const now = performance.now();
+    const dt = listenStatsLastTick ? (now - listenStatsLastTick) / 1000 : 0;
+    listenStatsLastTick = now;
+    const audio = el.nativeAudio;
+    if (!audio || !state.currentTrack) return;
+    const activelyPlaying = state.isPlaying && !audio.paused && !audio.ended && !audio.seeking && audio.readyState >= 2 && !document.hidden;
+    if (!activelyPlaying || dt <= 0) return;
+    // Ignore huge gaps (sleep/standby) so the totals stay honest.
+    addListenTime(Math.min(dt, 5), state.currentTrack);
+    if (now - listenStatsLastFlush > 10000) {
+      listenStatsLastFlush = now;
+      flushListenStats(false);
+    }
+  }
+
+  function statsDateKeysForPeriod(period) {
+    const keys = [];
+    const now = new Date();
+    if (period === 'today') {
+      keys.push(statsDayKey(now));
+    } else if (period === '7d') {
+      for (let i = 0; i < 7; i++) keys.push(statsDayKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - i)));
+    } else {
+      Object.keys(loadListenStats().days).forEach(key => keys.push(key));
+    }
+    return keys;
+  }
+
+  function aggregateListenStats(period) {
+    const stats = loadListenStats();
+    const hours = new Array(24).fill(0);
+    const artists = new Map();
+    const tracks = new Map();
+    let seconds = 0;
+    statsDateKeysForPeriod(period).forEach(key => {
+      const day = stats.days[key];
+      if (!day || !(day.seconds > 0)) return;
+      seconds += day.seconds;
+      (day.hours || []).forEach((value, index) => { if (index < 24) hours[index] += value || 0; });
+      Object.keys(day.artists || {}).forEach(artistKey => {
+        const artist = day.artists[artistKey];
+        const prev = artists.get(artistKey) || { name: artist.name || artistKey, seconds: 0, thumb: artist.thumb || '' };
+        prev.seconds += artist.seconds || 0;
+        if (!prev.thumb && artist.thumb) prev.thumb = artist.thumb;
+        artists.set(artistKey, prev);
+      });
+      Object.keys(day.tracks || {}).forEach(trackKey => {
+        tracks.set(trackKey, (tracks.get(trackKey) || 0) + (day.tracks[trackKey] || 0));
+      });
+    });
+    const trackList = Array.from(tracks.entries())
+      .filter(([, secs]) => secs > 0)
+      .map(([trackKey, secs]) => ({ ...(stats.trackMeta[trackKey] || {}), key: trackKey, seconds: secs }))
+      .sort((a, b) => b.seconds - a.seconds);
+    return {
+      seconds,
+      hours,
+      artists: Array.from(artists.values()).filter(a => a.seconds > 0).sort((a, b) => b.seconds - a.seconds),
+      tracks: trackList
+    };
+  }
+
+  function statsDayNumber(key) {
+    const parts = String(key || '').split('-').map(Number);
+    if (parts.length !== 3 || parts.some(n => !Number.isFinite(n))) return null;
+    return Math.floor(Date.UTC(parts[0], parts[1] - 1, parts[2]) / 86400000);
+  }
+
+  function statsBestStreak() {
+    const stats = loadListenStats();
+    const days = Object.keys(stats.days)
+      .filter(key => stats.days[key] && stats.days[key].seconds > 0.5)
+      .map(statsDayNumber)
+      .filter(n => n !== null)
+      .sort((a, b) => a - b);
+    let best = 0;
+    let run = 0;
+    let prev = null;
+    days.forEach(day => {
+      if (prev !== null && day === prev + 1) run += 1;
+      else run = 1;
+      if (run > best) best = run;
+      prev = day;
+    });
+    return best;
+  }
+
+  function statsStreak() {
+    const stats = loadListenStats();
+    const hasMusic = key => !!(stats.days[key] && stats.days[key].seconds > 0.5);
+    const cursor = new Date();
+    if (!hasMusic(statsDayKey(cursor))) cursor.setDate(cursor.getDate() - 1);
+    let streak = 0;
+    while (hasMusic(statsDayKey(cursor)) && streak < 10000) {
+      streak++;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return streak;
+  }
+
+  function formatStatsDuration(seconds) {
+    const total = Math.max(0, Math.round(seconds || 0));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+    if (m > 0) return `${m}m`;
+    return `${total}s`;
+  }
+
+  function statsArtistAvatar(name, fallbackThumb) {
+    try {
+      const cache = safeJson('lumo_artist_meta_cache', {}) || {};
+      const meta = cache[String(name || '').toLowerCase().trim()];
+      if (meta && meta.avatar) return meta.avatar;
+    } catch (e) {}
+    return fallbackThumb || '';
+  }
+
+  function fetchMissingArtistAvatar(name, imgEl) {
+    if (!name || !window.fetch || !state.serverPort) return;
+    const lower = String(name).toLowerCase().trim();
+    try {
+      const cache = safeJson('lumo_artist_meta_cache', {}) || {};
+      if (cache[lower] && cache[lower].avatar) return;
+    } catch (e) {}
+    fetch(`http://127.0.0.1:${state.serverPort}/api/artist?name=${encodeURIComponent(name)}`)
+      .then(r => r.json())
+      .then(data => {
+        const avatar = data && data.artist && (data.artist.avatar || data.artist.banner);
+        if (!avatar) return;
+        const cache = safeJson('lumo_artist_meta_cache', {}) || {};
+        cache[lower] = { ...(cache[lower] || {}), avatar };
+        localStorage.setItem('lumo_artist_meta_cache', JSON.stringify(cache));
+        if (imgEl && imgEl.isConnected) imgEl.src = avatar;
+      })
+      .catch(() => {});
+  }
+
+  function playStatsTrack(entry) {
+    if (!entry) return;
+    const track = { ...entry };
+    delete track.seconds;
+    delete track.key;
+    delete track.lastPlayed;
+    if (!track.title) {
+      if (typeof showToast === 'function') showToast('Track is no longer available', 'error');
+      return;
+    }
+    try {
+      const result = playTrack(track, [track], 0, 'stats');
+      if (result && typeof result.catch === 'function') {
+        result.catch(() => { if (typeof showToast === 'function') showToast('Could not play this track', 'error'); });
+      }
+    } catch (e) {
+      if (typeof showToast === 'function') showToast('Could not play this track', 'error');
+    }
+  }
+
+  function renderStatsView() {
+    const period = ['today', '7d', 'all'].includes(statsPeriod) ? statsPeriod : 'today';
+    statsPeriod = period;
+    const agg = aggregateListenStats(period);
+    const totalEl = document.getElementById('stats-total-value');
+    const totalHint = document.getElementById('stats-total-hint');
+    const streakEl = document.getElementById('stats-streak-value');
+    const streakBestEl = document.getElementById('stats-streak-best');
+    const listEl = document.getElementById('stats-artist-list');
+    const trackListEl = document.getElementById('stats-track-list');
+    const hoursEl = document.getElementById('stats-hours');
+    const switchEl = document.getElementById('stats-period-switch');
+
+    if (switchEl) {
+      switchEl.querySelectorAll('[data-stats-period]').forEach(btn => {
+        const active = btn.dataset.statsPeriod === period;
+        btn.classList.toggle('active', active);
+        btn.setAttribute('aria-selected', String(active));
+      });
+    }
+    if (totalEl) totalEl.textContent = formatStatsDuration(agg.seconds);
+    if (totalHint) {
+      const labels = { today: 'Today', '7d': 'Last 7 days', all: 'All time' };
+      totalHint.textContent = agg.seconds > 0 ? labels[period] : 'No listening yet';
+    }
+    const streak = statsStreak();
+    if (streakEl) streakEl.textContent = streak === 1 ? '1 day' : `${streak} days`;
+    const bestStreak = statsBestStreak();
+    if (streakBestEl) streakBestEl.textContent = bestStreak === 1 ? '1 day' : `${bestStreak} days`;
+
+    if (listEl) {
+      listEl.innerHTML = '';
+      const top = agg.artists.slice(0, 5);
+      if (!top.length) {
+        listEl.innerHTML = '<div class="stats-empty">No artist data for this period.</div>';
+      } else {
+        const max = top[0].seconds || 1;
+        top.forEach((artist, index) => {
+          const row = document.createElement('div');
+          row.className = 'stats-artist-row';
+          const avatar = statsArtistAvatar(artist.name, artist.thumb);
+          const pct = Math.max(2, Math.round((artist.seconds / max) * 100));
+          row.innerHTML = `
+            <span class="stats-artist-rank">${index + 1}</span>
+            <span class="stats-artist-avatar">${avatar ? `<img src="${escapeHtml(avatar)}" alt="" loading="lazy" onerror="this.style.display='none'">` : `<span>${escapeHtml(String(artist.name || '?').charAt(0).toUpperCase())}</span>`}</span>
+            <span class="stats-artist-main">
+              <span class="stats-artist-name">${escapeHtml(artist.name || 'Unknown artist')}</span>
+              <span class="stats-artist-bar"><i style="width:${pct}%"></i></span>
+            </span>
+            <span class="stats-artist-time">${formatStatsDuration(artist.seconds)}</span>
+          `;
+          const img = row.querySelector('.stats-artist-avatar img');
+          if (img) fetchMissingArtistAvatar(artist.name, img);
+          const openArtist = (event) => {
+            event.stopPropagation();
+            if (artist.name) openArtistProfile(artist.name);
+          };
+          const avatarEl = row.querySelector('.stats-artist-avatar');
+          const nameEl = row.querySelector('.stats-artist-name');
+          if (avatarEl) { avatarEl.classList.add('stats-clickable'); avatarEl.addEventListener('click', openArtist); }
+          if (nameEl) { nameEl.classList.add('stats-clickable'); nameEl.addEventListener('click', openArtist); }
+          listEl.appendChild(row);
+        });
+      }
+    }
+
+    if (trackListEl) {
+      trackListEl.innerHTML = '';
+      const topTracks = agg.tracks.slice(0, 5);
+      if (!topTracks.length) {
+        trackListEl.innerHTML = '<div class="stats-empty">No track data for this period.</div>';
+      } else {
+        topTracks.forEach(entry => {
+          const row = document.createElement('div');
+          row.className = 'stats-track-row';
+          const thumb = entry.thumbnail || entry.cover || '';
+          row.innerHTML = `
+            <span class="stats-track-cover">${thumb ? `<img src="${escapeHtml(thumb)}" alt="" loading="lazy" onerror="this.style.display='none'">` : '<span>♪</span>'}</span>
+            <span class="stats-track-main">
+              <button type="button" class="stats-track-title" title="Play track">${escapeHtml(entry.title || 'Unknown track')}</button>
+              <button type="button" class="stats-track-artist" title="Open artist">${escapeHtml(entry.artist || 'Unknown artist')}</button>
+            </span>
+            <span class="stats-track-time">${formatStatsDuration(entry.seconds)}</span>
+          `;
+          const titleBtn = row.querySelector('.stats-track-title');
+          const artistBtn = row.querySelector('.stats-track-artist');
+          const coverEl = row.querySelector('.stats-track-cover');
+          if (titleBtn) titleBtn.addEventListener('click', () => playStatsTrack(entry));
+          if (coverEl) { coverEl.classList.add('stats-clickable'); coverEl.addEventListener('click', () => playStatsTrack(entry)); }
+          if (artistBtn) artistBtn.addEventListener('click', () => { if (entry.artist) openArtistProfile(entry.artist); });
+          trackListEl.appendChild(row);
+        });
+      }
+    }
+
+    if (hoursEl) {
+      hoursEl.innerHTML = '';
+      const maxHour = Math.max(...agg.hours, 1);
+      for (let h = 0; h < 24; h++) {
+        const value = agg.hours[h] || 0;
+        const height = value > 0 ? Math.max(4, Math.round((value / maxHour) * 100)) : 0;
+        const bar = document.createElement('div');
+        bar.className = 'stats-hour' + (value > 0 ? ' has-value' : '');
+        bar.innerHTML = `<div class="stats-hour-track"><span class="stats-hour-bar" style="height:${height}%"></span></div><span class="stats-hour-label">${h % 6 === 0 ? String(h).padStart(2, '0') : ''}</span>`;
+        bar.title = `${String(h).padStart(2, '0')}:00 — ${formatStatsDuration(value)}`;
+        hoursEl.appendChild(bar);
+      }
+    }
+  }
+
+  if (el.navStats) el.navStats.addEventListener('click', () => switchView('stats'));
+  const statsPeriodSwitch = document.getElementById('stats-period-switch');
+  if (statsPeriodSwitch) {
+    statsPeriodSwitch.addEventListener('click', (event) => {
+      const btn = event.target.closest('[data-stats-period]');
+      if (!btn) return;
+      const next = btn.dataset.statsPeriod;
+      if (!['today', '7d', 'all'].includes(next)) return;
+      statsPeriod = next;
+      localStorage.setItem(LISTEN_STATS_PERIOD_KEY, next);
+      renderStatsView();
+    });
+  }
+  const btnStatsRefresh = document.getElementById('btn-stats-refresh');
+  if (btnStatsRefresh) {
+    btnStatsRefresh.addEventListener('click', () => {
+      btnStatsRefresh.classList.remove('stats-refreshing');
+      void btnStatsRefresh.offsetWidth;
+      btnStatsRefresh.classList.add('stats-refreshing');
+      setTimeout(() => btnStatsRefresh.classList.remove('stats-refreshing'), 700);
+      flushListenStats(true);
+      renderStatsView();
+    });
+  }
+
+  loadListenStats();
+  setInterval(tickListeningStats, 1000);
+  window.addEventListener('beforeunload', () => flushListenStats(true));
+  document.addEventListener('visibilitychange', () => { if (document.hidden) flushListenStats(true); });
+
   if (el.navDiscover) el.navDiscover.addEventListener('click', () => switchView('discover'));
   if (el.navFavorites) el.navFavorites.addEventListener('click', () => switchView('favorites'));
   if (el.navAlbums) el.navAlbums.addEventListener('click', () => switchView('albums'));
   if (el.navLocal) el.navLocal.addEventListener('click', () => switchView('local'));
   if (el.navHistory) el.navHistory.addEventListener('click', () => switchView('history'));
   if (el.navQueue) el.navQueue.addEventListener('click', () => switchView('queue'));
+  if (el.navProfile) el.navProfile.addEventListener('click', () => {
+    state.viewingProfileUser = null;
+    switchView('profile');
+  });
   if (el.navSettings) el.navSettings.addEventListener('click', () => switchView('settings'));
+  if (el.btnUserProfile) el.btnUserProfile.addEventListener('click', () => {
+    state.viewingProfileUser = null;
+    switchView('profile');
+  });
+  updateUserNavButton();
   updateAlbumsCount();
 
   if (el.btnAddLocalFiles) el.btnAddLocalFiles.addEventListener('click', () => importLocalFiles());
@@ -11492,12 +14402,9 @@ function bindCoverHoldZoom(wrapEl) {
 }
 
   if (el.coverContainer) {
-    el.coverContainer.style.cursor = 'pointer';
     bindCoverHoldZoom(el.coverContainer);
     el.coverContainer.addEventListener('click', (e) => {
-      if (state.currentTrack && !el.coverContainer._zoomedFlag) {
-        openTrackArtModal(state.currentTrack);
-      } else if (!state.currentTrack) {
+      if (!state.currentTrack) {
         if (e.target.closest('#btn-right-panel-art')) return;
         startWaveIfIdle();
       }
@@ -11516,7 +14423,7 @@ function bindCoverHoldZoom(wrapEl) {
     const panel = el.rightPanel || document.getElementById('right-panel');
     if (!edge || !panel) return;
 
-    const savedWidth = localStorage.getItem('riff_right_panel_width');
+    const savedWidth = localStorage.getItem('lumo_right_panel_width');
     if (savedWidth) {
       const w = parseInt(savedWidth, 10);
       if (w >= 260 && w <= 720) {
@@ -11566,7 +14473,7 @@ function bindCoverHoldZoom(wrapEl) {
         raf = 0;
       }
       if (pendingW >= 260 && pendingW <= 720) {
-        localStorage.setItem('riff_right_panel_width', pendingW.toString());
+        localStorage.setItem('lumo_right_panel_width', pendingW.toString());
       }
       if (typeof resizeCanvases === 'function') resizeCanvases();
     };
@@ -11577,7 +14484,7 @@ function bindCoverHoldZoom(wrapEl) {
     edge.addEventListener('dblclick', () => {
       panel.style.width = '340px';
       panel.style.setProperty('--right-panel-width', '340px');
-      localStorage.setItem('riff_right_panel_width', '340px');
+      localStorage.setItem('lumo_right_panel_width', '340px');
       if (typeof resizeCanvases === 'function') resizeCanvases();
     });
   })();
@@ -11636,9 +14543,9 @@ function bindCoverHoldZoom(wrapEl) {
 
 
   function setPlatform(platform, triggerSearch = true) {
-    if (!['youtube', 'ytmusic', 'soundcloud'].includes(platform)) platform = 'ytmusic';
+    if (!['all', 'youtube', 'applemusic', 'ytmusic', 'soundcloud'].includes(platform)) platform = 'ytmusic';
     state.platform = platform;
-    localStorage.setItem('riff_platform', platform);
+    localStorage.setItem('lumo_platform', platform);
 
     if (el.platformYt) el.platformYt.classList.toggle('active', platform === 'youtube');
     if (el.platformYtm) el.platformYtm.classList.toggle('active', platform === 'ytmusic');
@@ -11647,8 +14554,14 @@ function bindCoverHoldZoom(wrapEl) {
     const select = document.getElementById('select-engine-api');
     if (select) select.value = platform;
     const label = document.getElementById('engine-api-label');
-    const nameMap = { youtube: 'YouTube', ytmusic: 'YouTube Music', soundcloud: 'SoundCloud' };
-    if (label) label.textContent = nameMap[platform] || 'YouTube';
+    const nameMap = {
+      all: 'All (YouTube, YouTube Music, Apple Music, SoundCloud)',
+      youtube: 'YouTube',
+      applemusic: 'Apple Music',
+      ytmusic: 'YouTube Music',
+      soundcloud: 'SoundCloud'
+    };
+    if (label) label.textContent = nameMap[platform] || 'YouTube Music';
     const menu = document.getElementById('engine-api-menu');
     if (menu) {
       menu.querySelectorAll('.m3-dropdown-option').forEach(opt => {
@@ -11661,7 +14574,7 @@ function bindCoverHoldZoom(wrapEl) {
     }
   }
 
-  const savedPlatform = localStorage.getItem('riff_platform') || 'ytmusic';
+  const savedPlatform = localStorage.getItem('lumo_platform') || 'ytmusic';
   setPlatform(savedPlatform, false);
 
   if (el.platformYt) el.platformYt.addEventListener('click', () => setPlatform('youtube'));
@@ -11709,7 +14622,7 @@ function bindCoverHoldZoom(wrapEl) {
   }
 
   const btnCompactEngineBtns = document.getElementById('btn-compact-engine-btns');
-  const isCompactEngine = localStorage.getItem('riff_compact_engine_btns') === '1';
+  const isCompactEngine = localStorage.getItem('lumo_compact_engine_btns') === '1';
   document.body.classList.toggle('compact-engine-btns', isCompactEngine);
   if (btnCompactEngineBtns) {
     btnCompactEngineBtns.classList.toggle('active', isCompactEngine);
@@ -11717,14 +14630,14 @@ function bindCoverHoldZoom(wrapEl) {
       const next = !btnCompactEngineBtns.classList.contains('active');
       btnCompactEngineBtns.classList.toggle('active', next);
       document.body.classList.toggle('compact-engine-btns', next);
-      localStorage.setItem('riff_compact_engine_btns', next ? '1' : '0');
+      localStorage.setItem('lumo_compact_engine_btns', next ? '1' : '0');
       updateEngineWidthVar();
       setTimeout(updateEngineWidthVar, 350);
     });
   }
 
   const btnHideEngineBtns = document.getElementById('btn-hide-engine-btns');
-  const isHideEngine = localStorage.getItem('riff_hide_engine_btns') === '1';
+  const isHideEngine = localStorage.getItem('lumo_hide_engine_btns') === '1';
   document.body.classList.toggle('hide-engine-btns', isHideEngine);
   if (btnHideEngineBtns) {
     btnHideEngineBtns.classList.toggle('active', isHideEngine);
@@ -11732,7 +14645,7 @@ function bindCoverHoldZoom(wrapEl) {
       const next = !btnHideEngineBtns.classList.contains('active');
       btnHideEngineBtns.classList.toggle('active', next);
       document.body.classList.toggle('hide-engine-btns', next);
-      localStorage.setItem('riff_hide_engine_btns', next ? '1' : '0');
+      localStorage.setItem('lumo_hide_engine_btns', next ? '1' : '0');
       updateEngineWidthVar();
       setTimeout(updateEngineWidthVar, 350);
     });
@@ -11740,14 +14653,11 @@ function bindCoverHoldZoom(wrapEl) {
 
   const btnPersistSound = document.getElementById('btn-persist-sound-settings');
   if (btnPersistSound) {
-    btnPersistSound.classList.toggle('active', soundPersistenceEnabled);
-    btnPersistSound.addEventListener('click', () => {
-      const next = !btnPersistSound.classList.contains('active');
-      btnPersistSound.classList.toggle('active', next);
-      soundPersistenceEnabled = next;
-      localStorage.setItem('riff_persist_sound_settings', next ? '1' : '0');
-      if (next) persistSoundSettings();
-    });
+    btnPersistSound.classList.add('active');
+    btnPersistSound.disabled = true;
+    btnPersistSound.setAttribute('aria-label', 'Sound settings are always saved');
+    localStorage.setItem('lumo_persist_sound_settings', '1');
+    persistSoundSettings();
   }
 
   if (el.btnPlayPause) el.btnPlayPause.addEventListener('click', togglePlayPause);
@@ -11758,17 +14668,34 @@ function bindCoverHoldZoom(wrapEl) {
     el.btnShuffle.classList.toggle('active', state.isShuffle);
     el.btnShuffle.addEventListener('click', () => {
       state.isShuffle = !state.isShuffle;
-      localStorage.setItem('riff_shuffle', state.isShuffle ? '1' : '0');
+      localStorage.setItem('lumo_shuffle', state.isShuffle ? '1' : '0');
       el.btnShuffle.classList.toggle('active', state.isShuffle);
     });
   }
 
+  function updateRepeatUI() {
+    if (!el.btnRepeat) return;
+    const mode = state.repeatMode || (state.isRepeat ? 'all' : 'off');
+    el.btnRepeat.classList.toggle('active', mode !== 'off');
+    el.btnRepeat.classList.toggle('repeat-one', mode === 'one');
+    el.btnRepeat.title = mode === 'one' ? 'Repeat One' : (mode === 'all' ? 'Repeat All' : 'Repeat Off');
+  }
+
   if (el.btnRepeat) {
-    el.btnRepeat.classList.toggle('active', state.isRepeat);
+    updateRepeatUI();
     el.btnRepeat.addEventListener('click', () => {
-      state.isRepeat = !state.isRepeat;
-      localStorage.setItem('riff_repeat', state.isRepeat ? '1' : '0');
-      el.btnRepeat.classList.toggle('active', state.isRepeat);
+      if (state.repeatMode === 'off') {
+        state.repeatMode = 'all';
+        state.isRepeat = true;
+      } else if (state.repeatMode === 'all') {
+        state.repeatMode = 'one';
+        state.isRepeat = true;
+      } else {
+        state.repeatMode = 'off';
+        state.isRepeat = false;
+      }
+      localStorage.setItem('lumo_repeat', state.repeatMode);
+      updateRepeatUI();
     });
   }
 
@@ -11777,8 +14704,8 @@ function bindCoverHoldZoom(wrapEl) {
 
   function persistVolumeState() {
     try {
-      localStorage.setItem('riff_volume', String(state.volume));
-      localStorage.setItem('riff_muted', state.isMuted ? '1' : '0');
+      localStorage.setItem('lumo_volume', String(state.volume));
+      localStorage.setItem('lumo_muted', state.isMuted ? '1' : '0');
     } catch (e) {}
   }
 
@@ -11829,10 +14756,38 @@ function bindCoverHoldZoom(wrapEl) {
     });
   }
 
+  if (el.btnPlaybarDots) {
+    el.btnPlaybarDots.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!state.currentTrack) return;
+      openTrackContextMenu(e.clientX, e.clientY, state.currentTrack, state.currentTrackContext || 'playbar', null, el.btnPlaybarDots);
+    });
+  }
+
+  const btnTvkFavorite = document.getElementById('btn-tvk-favorite');
+  if (btnTvkFavorite) {
+    btnTvkFavorite.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (state.currentTrack) toggleFavoriteTrack(state.currentTrack);
+    });
+  }
+
+  const btnTvkRepost = document.getElementById('btn-tvk-repost');
+  if (btnTvkRepost) {
+    btnTvkRepost.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (!state.currentTrack) return;
+      const rep = toggleTrackRepost(state.currentTrack);
+      btnTvkRepost.classList.toggle('active', rep);
+      const svg = btnTvkRepost.querySelector('svg');
+      if (svg) svg.style.stroke = rep ? 'var(--md-sys-color-primary, #d0bcff)' : 'currentColor';
+    });
+  }
+
   if (el.btnClearHistory) {
     el.btnClearHistory.addEventListener('click', () => {
       state.history = [];
-      localStorage.setItem('devsize_history', '[]');
+      localStorage.setItem('lumo_history', '[]');
       renderHistoryView();
     });
   }
@@ -12149,6 +15104,9 @@ function bindCoverHoldZoom(wrapEl) {
   if (el.btnOpenSettings) {
     el.btnOpenSettings.addEventListener('click', (e) => {
       e.stopPropagation();
+      state.isRightPanelOpen = false;
+      el.rightPanel?.classList.add('hidden');
+      el.btnToggleLyricsPanel?.classList.remove('active');
       const tempoTab = document.querySelector('.audio-tab[data-audio-tab="tempo"]') || document.querySelector('.audio-tab');
       if (tempoTab) tempoTab.click();
       toggleConnectedAudio();
@@ -12578,7 +15536,7 @@ function bindCoverHoldZoom(wrapEl) {
     el.themeModeBtns.forEach(btn => {
       btn.addEventListener('click', () => {
         state.themeMode = btn.dataset.themeMode;
-        localStorage.setItem('riff_theme_mode', state.themeMode);
+        localStorage.setItem('lumo_theme_mode', state.themeMode);
         updateThemeFromState();
       });
     });
@@ -12588,11 +15546,11 @@ function bindCoverHoldZoom(wrapEl) {
     el.themeSwatches.forEach(sw => {
       sw.addEventListener('click', () => {
         state.themeAccent = sw.dataset.color;
-        localStorage.setItem('riff_theme_accent', state.themeAccent);
+        localStorage.setItem('lumo_theme_accent', state.themeAccent);
         if (state.themeMode === 'auto') {
           const targetMode = currentEffectiveMode || 'dark';
           state.themeMode = targetMode;
-          localStorage.setItem('riff_theme_mode', targetMode);
+          localStorage.setItem('lumo_theme_mode', targetMode);
         }
         updateThemeFromState();
       });
@@ -12602,11 +15560,11 @@ function bindCoverHoldZoom(wrapEl) {
   if (el.customColorInput) {
     el.customColorInput.addEventListener('input', (e) => {
       state.themeAccent = e.target.value;
-      localStorage.setItem('riff_theme_accent', state.themeAccent);
+      localStorage.setItem('lumo_theme_accent', state.themeAccent);
       if (state.themeMode === 'auto') {
         const targetMode = currentEffectiveMode || 'dark';
         state.themeMode = targetMode;
-        localStorage.setItem('riff_theme_mode', targetMode);
+        localStorage.setItem('lumo_theme_mode', targetMode);
       }
       updateThemeFromState();
       if (el.themeSwatches) el.themeSwatches.forEach(sw => sw.classList.remove('active'));
@@ -12623,11 +15581,11 @@ function bindCoverHoldZoom(wrapEl) {
       const h = parseInt(e.target.value, 10);
       if (el.valHue) el.valHue.textContent = h + '°';
       state.themeAccent = hslToHex(h, 55, 50);
-      localStorage.setItem('riff_theme_accent', state.themeAccent);
+      localStorage.setItem('lumo_theme_accent', state.themeAccent);
       if (state.themeMode === 'auto') {
         const targetMode = currentEffectiveMode || 'dark';
         state.themeMode = targetMode;
-        localStorage.setItem('riff_theme_mode', targetMode);
+        localStorage.setItem('lumo_theme_mode', targetMode);
       }
       updateThemeFromState();
       if (el.themeSwatches) el.themeSwatches.forEach(sw => sw.classList.remove('active'));
@@ -12645,7 +15603,7 @@ function bindCoverHoldZoom(wrapEl) {
       state.themeIntensity = val;
       document.body.classList.toggle('intensity-zero', state.themeIntensity < 8);
       if (el.valIntensity) el.valIntensity.textContent = val + '%';
-      localStorage.setItem('riff_theme_intensity', val.toString());
+      localStorage.setItem('lumo_theme_intensity', val.toString());
       updateThemeFromState();
     });
   }
@@ -12659,7 +15617,7 @@ function bindCoverHoldZoom(wrapEl) {
       const val = parseInt(e.target.value, 10);
       state.themeBrightness = val;
       if (el.valBrightness) el.valBrightness.textContent = val + '%';
-      localStorage.setItem('riff_theme_brightness', val.toString());
+      localStorage.setItem('lumo_theme_brightness', val.toString());
       updateThemeFromState();
     });
   }
@@ -12674,7 +15632,7 @@ function bindCoverHoldZoom(wrapEl) {
       const val = parseInt(e.target.value, 10);
       state.uiScale = val;
       if (el.valScale) el.valScale.textContent = `${val}%`;
-      localStorage.setItem('devsize_ui_scale', val.toString());
+      localStorage.setItem('lumo_ui_scale', val.toString());
       requestAnimationFrame(() => {
         applyScale(val);
         requestAnimationFrame(resizeCanvases);
@@ -12687,7 +15645,7 @@ function bindCoverHoldZoom(wrapEl) {
       const val = parseInt(e.target.value, 10);
       if (el.valFontScale) el.valFontScale.textContent = `${val}%`;
       document.documentElement.style.setProperty('--font-scale', ((val / 100) * 0.95 * 1.25).toString());
-      localStorage.setItem('riff_font_scale', val.toString());
+      localStorage.setItem('lumo_font_scale', val.toString());
       requestAnimationFrame(updateEngineWidthVar);
     });
   }
@@ -12695,19 +15653,70 @@ function bindCoverHoldZoom(wrapEl) {
   const fontOptGoogle = document.getElementById('font-opt-google');
   const fontOptSf = document.getElementById('font-opt-sf');
   const fontOptSystem = document.getElementById('font-opt-system');
+  const fontOptCustom = document.getElementById('font-opt-custom');
+  const inputCustomFontFile = document.getElementById('input-custom-font-file');
+  const btnResetCustomFont = document.getElementById('btn-reset-custom-font');
 
   [
     { btn: fontOptGoogle, key: 'google' },
     { btn: fontOptSf, key: 'sf' },
-    { btn: fontOptSystem, key: 'system' }
+    { btn: fontOptSystem, key: 'system' },
+    { btn: fontOptCustom, key: 'custom' }
   ].forEach(({ btn, key }) => {
     if (btn) {
       btn.addEventListener('click', () => {
-        localStorage.setItem('riff_font', key);
+        if (key === 'custom') {
+          if (!localStorage.getItem('lumo_custom_font_data') && inputCustomFontFile) {
+            inputCustomFontFile.click();
+            return;
+          }
+        }
+        localStorage.setItem('lumo_font', key);
         applyFont(key);
       });
     }
   });
+
+  if (inputCustomFontFile) {
+    inputCustomFontFile.addEventListener('change', () => {
+      const file = inputCustomFontFile.files && inputCustomFontFile.files[0];
+      if (!file) return;
+      const validExts = ['.ttf', '.otf', '.woff', '.woff2'];
+      const ext = (file.name.slice(file.name.lastIndexOf('.')) || '').toLowerCase();
+      if (!validExts.includes(ext)) {
+        showToast('Please select a valid font file (.ttf, .otf, .woff, .woff2)', 'warning');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        const fontDataUrl = ev.target.result;
+        try {
+          localStorage.setItem('lumo_custom_font_data', fontDataUrl);
+          localStorage.setItem('lumo_custom_font_name', file.name);
+          localStorage.setItem('lumo_font', 'custom');
+          applyFont('custom');
+          showToastNow(`Applied custom font: ${file.name}`, 'success');
+        } catch (err) {
+          showToast('Failed to save font (file may be too large)', 'error');
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  }
+
+  if (btnResetCustomFont) {
+    btnResetCustomFont.addEventListener('click', (e) => {
+      e.stopPropagation();
+      localStorage.removeItem('lumo_custom_font_data');
+      localStorage.removeItem('lumo_custom_font_name');
+      const styleTag = document.getElementById('riff-custom-font-style');
+      if (styleTag) styleTag.remove();
+      localStorage.setItem('lumo_font', 'google');
+      applyFont('google');
+      showToastNow('Custom font removed, reset to Google Sans', 'info');
+    });
+  }
+
   applyFont(state.riffFont);
 
   const ICON_PACKS = {
@@ -12804,7 +15813,7 @@ function bindCoverHoldZoom(wrapEl) {
     }
   }
 
-  const savedIconPack = localStorage.getItem('riff_icon_pack') || 'material';
+  const savedIconPack = localStorage.getItem('lumo_icon_pack') || 'material';
   applyIconPack(savedIconPack);
 
   const iconPackDropdown = document.getElementById('icon-pack-dropdown');
@@ -12820,7 +15829,7 @@ function bindCoverHoldZoom(wrapEl) {
       opt.addEventListener('click', (e) => {
         e.stopPropagation();
         const val = opt.dataset.value;
-        localStorage.setItem('riff_icon_pack', val);
+        localStorage.setItem('lumo_icon_pack', val);
         applyIconPack(val);
         iconPackDropdown.classList.remove('open');
       });
@@ -12832,25 +15841,26 @@ function bindCoverHoldZoom(wrapEl) {
   }
 
   function applySearchPos(pos) {
-    if (!['left', 'middle', 'right'].includes(pos)) pos = 'middle';
+    pos = 'left';
+    localStorage.setItem('lumo_search_pos', 'left');
     const topNav = document.querySelector('.top-nav');
     if (topNav) {
-      topNav.classList.remove('search-pos-left', 'search-pos-middle', 'search-pos-right');
-      topNav.classList.add(`search-pos-${pos}`);
+      topNav.classList.remove('search-pos-middle', 'search-pos-right');
+      topNav.classList.add('search-pos-left');
     }
     const select = document.getElementById('select-search-pos');
-    if (select) select.value = pos;
+    if (select) select.value = 'left';
     const label = document.getElementById('search-pos-label');
-    if (label) label.textContent = pos.charAt(0).toUpperCase() + pos.slice(1);
+    if (label) label.textContent = 'Left';
     const menu = document.getElementById('search-pos-menu');
     if (menu) {
       menu.querySelectorAll('.m3-dropdown-option').forEach(opt => {
-        opt.classList.toggle('selected', opt.dataset.value === pos);
+        opt.classList.toggle('selected', opt.dataset.value === 'left');
       });
     }
   }
 
-  const savedSearchPos = localStorage.getItem('riff_search_pos') || 'middle';
+  const savedSearchPos = 'left';
   applySearchPos(savedSearchPos);
 
   const searchPosDropdown = document.getElementById('search-pos-dropdown');
@@ -12865,9 +15875,8 @@ function bindCoverHoldZoom(wrapEl) {
     searchPosMenu.querySelectorAll('.m3-dropdown-option').forEach(opt => {
       opt.addEventListener('click', (e) => {
         e.stopPropagation();
-        const val = opt.dataset.value;
-        localStorage.setItem('riff_search_pos', val);
-        applySearchPos(val);
+        localStorage.setItem('lumo_search_pos', 'left');
+        applySearchPos('left');
         searchPosDropdown.classList.remove('open');
       });
     });
@@ -12898,7 +15907,7 @@ function bindCoverHoldZoom(wrapEl) {
       if (el.valCornerRadius) el.valCornerRadius.textContent = val === 16 ? 'Default' : `${val}px`;
       document.documentElement.style.setProperty('--md-shape-corner-l', `${val}px`);
       document.documentElement.style.setProperty('--md-shape-corner-m', `${Math.max(0, val - 4)}px`);
-      localStorage.setItem('riff_corner_radius', val.toString());
+      localStorage.setItem('lumo_corner_radius', val.toString());
     });
   }
 
@@ -12907,7 +15916,7 @@ function bindCoverHoldZoom(wrapEl) {
       const val = Math.max(20, Math.min(100, parseInt(e.target.value, 10) || 100));
       if (el.valUiAlpha) el.valUiAlpha.textContent = `${val}%`;
       document.documentElement.style.setProperty('--ui-alpha', `${val}%`);
-      localStorage.setItem('riff_ui_alpha', val.toString());
+      localStorage.setItem('lumo_ui_alpha', val.toString());
       refreshCachedThemeColors();
     });
   }
@@ -12918,7 +15927,7 @@ function bindCoverHoldZoom(wrapEl) {
       if (el.sliderUiAlpha) el.sliderUiAlpha.value = val;
       if (el.valUiAlpha) el.valUiAlpha.textContent = `${val}%`;
       document.documentElement.style.setProperty('--ui-alpha', `${val}%`);
-      localStorage.setItem('riff_ui_alpha', val.toString());
+      localStorage.setItem('lumo_ui_alpha', val.toString());
       refreshCachedThemeColors();
     });
   }
@@ -12928,7 +15937,7 @@ function bindCoverHoldZoom(wrapEl) {
       const val = Math.max(1, Math.min(100, parseInt(e.target.value, 10) || 100));
       if (el.valTextAlpha) el.valTextAlpha.textContent = `${val}%`;
       document.documentElement.style.setProperty('--text-alpha', `${val}%`);
-      localStorage.setItem('riff_text_alpha', val.toString());
+      localStorage.setItem('lumo_text_alpha', val.toString());
       refreshCachedThemeColors();
     });
   }
@@ -12939,7 +15948,7 @@ function bindCoverHoldZoom(wrapEl) {
       if (el.sliderTextAlpha) el.sliderTextAlpha.value = val;
       if (el.valTextAlpha) el.valTextAlpha.textContent = `${val}%`;
       document.documentElement.style.setProperty('--text-alpha', `${val}%`);
-      localStorage.setItem('riff_text_alpha', val.toString());
+      localStorage.setItem('lumo_text_alpha', val.toString());
       refreshCachedThemeColors();
     });
   }
@@ -12952,7 +15961,7 @@ function bindCoverHoldZoom(wrapEl) {
       if (window.electronAPI && window.electronAPI.pickMedia) {
         const url = await window.electronAPI.pickMedia();
         if (url) {
-          localStorage.setItem('riff_banner_media', url);
+          localStorage.setItem('lumo_banner_media', url);
           const thumb = getTrackThumbUrl(state.currentTrack);
           updateRightPanelBanner(thumb);
           updatePlaylistDetailBanner(thumb);
@@ -12963,7 +15972,7 @@ function bindCoverHoldZoom(wrapEl) {
 
   if (btnResetBannerMedia) {
     btnResetBannerMedia.addEventListener('click', () => {
-      localStorage.removeItem('riff_banner_media');
+      localStorage.removeItem('lumo_banner_media');
       const thumb = getTrackThumbUrl(state.currentTrack);
       updateRightPanelBanner(thumb);
       updatePlaylistDetailBanner(thumb);
@@ -12979,7 +15988,7 @@ function bindCoverHoldZoom(wrapEl) {
       const v = parseInt(e.target.value, 10);
       document.documentElement.style.setProperty('--banner-blur', `${v}px`);
       if (valBannerBlur) valBannerBlur.textContent = `${v}px`;
-      localStorage.setItem('riff_banner_blur', v.toString());
+      localStorage.setItem('lumo_banner_blur', v.toString());
     });
   }
 
@@ -12992,7 +16001,7 @@ function bindCoverHoldZoom(wrapEl) {
       const v = parseInt(e.target.value, 10);
       document.documentElement.style.setProperty('--banner-opacity', `${v / 100}`);
       if (valBannerOpacity) valBannerOpacity.textContent = `${v}%`;
-      localStorage.setItem('riff_banner_opacity', v.toString());
+      localStorage.setItem('lumo_banner_opacity', v.toString());
     });
   }
 
@@ -13011,7 +16020,7 @@ function bindCoverHoldZoom(wrapEl) {
         rightBanner.style.setProperty('--banner-fade-end', `${v}%`);
       }
       if (valBannerFade) valBannerFade.textContent = `${v}%`;
-      localStorage.setItem('riff_banner_fade', v.toString());
+      localStorage.setItem('lumo_banner_fade', v.toString());
     });
   }
 
@@ -13061,7 +16070,7 @@ function bindCoverHoldZoom(wrapEl) {
       opt.addEventListener('click', (e) => {
         e.stopPropagation();
         const val = opt.dataset.value;
-        localStorage.setItem('riff_banner_fit', val);
+        localStorage.setItem('lumo_banner_fit', val);
         applyBannerFit(val);
         if (bannerFitLabel) bannerFitLabel.textContent = opt.textContent;
         bannerFitMenu.querySelectorAll('.m3-dropdown-option').forEach(o => o.classList.remove('selected'));
@@ -13093,9 +16102,9 @@ function bindCoverHoldZoom(wrapEl) {
   if (window.electronAPI && window.electronAPI.onWindowVisibility) window.electronAPI.onWindowVisibility(() => syncBgVideoPlayback());
 
   function updateCustomBg() {
-    const bgUrl = localStorage.getItem('riff_bg_url') || '';
-    const opacityVal = parseInt(localStorage.getItem('riff_bg_opacity') ?? '100', 10);
-    const blurVal = parseInt(localStorage.getItem('riff_bg_blur') ?? '0', 10);
+    const bgUrl = localStorage.getItem('lumo_bg_url') || '';
+    const opacityVal = parseInt(localStorage.getItem('lumo_bg_opacity') ?? '100', 10);
+    const blurVal = parseInt(localStorage.getItem('lumo_bg_blur') ?? '0', 10);
     const isVideo = /\.(mp4|webm)($|\?)/i.test(bgUrl);
     document.body.classList.toggle('has-video-bg', isVideo && !!bgUrl);
 
@@ -13163,17 +16172,17 @@ function bindCoverHoldZoom(wrapEl) {
 
   function currentUiAlpha() { return Number(document.getElementById('slider-ui-alpha').value); }
   function setUiAlphaViaSlider(v) { const s = document.getElementById('slider-ui-alpha'); if (!s) return; s.value = v; s.dispatchEvent(new Event('input', { bubbles: true })); }
-  function backgroundActive() { return !!localStorage.getItem('riff_bg_url') || getAdv('cover_bg', true); }
+  function backgroundActive() { return !!localStorage.getItem('lumo_bg_url') || getAdv('cover_bg', true); }
   function onBackgroundChanged(kind, enabled) {
     if (document.body.classList.contains('light') || document.body.getAttribute('data-theme') === 'light') return;
     if (!getAdv('ui_alpha_auto', true)) return;
     if (enabled) {
       const now = currentUiAlpha();
-      if (now > 50) { localStorage.setItem('riff_ui_alpha_prev', String(now)); setUiAlphaViaSlider(50); localStorage.setItem('riff_ui_alpha_auto', '50'); }
+      if (now > 50) { localStorage.setItem('lumo_ui_alpha_prev', String(now)); setUiAlphaViaSlider(50); localStorage.setItem('lumo_ui_alpha_auto', '50'); }
     } else if (!backgroundActive()) {
-      const auto = localStorage.getItem('riff_ui_alpha_auto'), prev = localStorage.getItem('riff_ui_alpha_prev');
+      const auto = localStorage.getItem('lumo_ui_alpha_auto'), prev = localStorage.getItem('lumo_ui_alpha_prev');
       if (auto !== null && prev !== null && currentUiAlpha() === Number(auto)) setUiAlphaViaSlider(Number(prev));
-      localStorage.removeItem('riff_ui_alpha_auto'); localStorage.removeItem('riff_ui_alpha_prev');
+      localStorage.removeItem('lumo_ui_alpha_auto'); localStorage.removeItem('lumo_ui_alpha_prev');
     }
   }
 
@@ -13182,7 +16191,7 @@ function bindCoverHoldZoom(wrapEl) {
       if (window.electronAPI && window.electronAPI.pickMedia) {
         const url = await window.electronAPI.pickMedia();
         if (url) {
-          localStorage.setItem('riff_bg_url', url);
+          localStorage.setItem('lumo_bg_url', url);
           updateCustomBg();
           onBackgroundChanged('custom', true);
         }
@@ -13192,7 +16201,7 @@ function bindCoverHoldZoom(wrapEl) {
 
   if (btnRemoveCustomBg) {
     btnRemoveCustomBg.addEventListener('click', () => {
-      localStorage.removeItem('riff_bg_url');
+      localStorage.removeItem('lumo_bg_url');
       updateCustomBg();
       onBackgroundChanged('custom', false);
     });
@@ -13202,7 +16211,7 @@ function bindCoverHoldZoom(wrapEl) {
     sliderBgOpacity.addEventListener('input', (e) => {
       const v = parseInt(e.target.value, 10);
       if (valBgOpacity) valBgOpacity.textContent = `${v}%`;
-      localStorage.setItem('riff_bg_opacity', String(v));
+      localStorage.setItem('lumo_bg_opacity', String(v));
       const customBg = document.getElementById('custom-bg');
       if (customBg) customBg.style.opacity = (v / 100).toString();
     });
@@ -13212,7 +16221,7 @@ function bindCoverHoldZoom(wrapEl) {
     sliderBgBlur.addEventListener('input', (e) => {
       const v = parseInt(e.target.value, 10);
       if (valBgBlur) valBgBlur.textContent = `${v}px`;
-      localStorage.setItem('riff_bg_blur', String(v));
+      localStorage.setItem('lumo_bg_blur', String(v));
       const customBg = document.getElementById('custom-bg');
       if (customBg) {
         customBg.style.filter = 'none';
@@ -13234,7 +16243,7 @@ function bindCoverHoldZoom(wrapEl) {
   const sliderCoverBgBrightness = document.getElementById('slider-cover-bg-brightness');
   const valCoverBgBrightness = document.getElementById('val-cover-bg-brightness');
   if (sliderCoverBgBrightness) {
-    const savedBrightness = parseInt(localStorage.getItem('riff_cover_bg_brightness') ?? '45', 10);
+    const savedBrightness = parseInt(localStorage.getItem('lumo_cover_bg_brightness') ?? '45', 10);
     sliderCoverBgBrightness.value = savedBrightness;
     if (valCoverBgBrightness) valCoverBgBrightness.textContent = `${savedBrightness}%`;
     document.documentElement.style.setProperty('--cover-bg-brightness', (savedBrightness / 100).toString());
@@ -13242,7 +16251,7 @@ function bindCoverHoldZoom(wrapEl) {
     sliderCoverBgBrightness.addEventListener('input', (e) => {
       const v = parseInt(e.target.value, 10);
       if (valCoverBgBrightness) valCoverBgBrightness.textContent = `${v}%`;
-      localStorage.setItem('riff_cover_bg_brightness', String(v));
+      localStorage.setItem('lumo_cover_bg_brightness', String(v));
       document.documentElement.style.setProperty('--cover-bg-brightness', (v / 100).toString());
     });
   }
@@ -13269,7 +16278,7 @@ function bindCoverHoldZoom(wrapEl) {
       const v = parseInt(e.target.value, 10);
       state.meshBrightness = v;
       if (valMeshBrightness) valMeshBrightness.textContent = `${v}%`;
-      localStorage.setItem('riff_mesh_brightness', v.toString());
+      localStorage.setItem('lumo_mesh_brightness', v.toString());
       updateThemeFromState();
     });
   }
@@ -13283,7 +16292,7 @@ function bindCoverHoldZoom(wrapEl) {
 
   let meshCfg = { ...DEFAULT_MESH_CFG };
   try {
-    const raw = localStorage.getItem('riff_mesh_cfg');
+    const raw = localStorage.getItem('lumo_mesh_cfg');
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && parsed.p1 && parsed.p2) {
@@ -13330,7 +16339,7 @@ function bindCoverHoldZoom(wrapEl) {
     if (vlBlur) vlBlur.textContent = `${cfg.blur}px`;
 
     if (save) {
-      localStorage.setItem('riff_mesh_cfg', JSON.stringify(cfg));
+      localStorage.setItem('lumo_mesh_cfg', JSON.stringify(cfg));
     }
   }
 
@@ -13477,7 +16486,7 @@ function bindCoverHoldZoom(wrapEl) {
         e.stopPropagation();
         const val = opt.dataset.value;
         state.paletteStyle = val;
-        localStorage.setItem('riff_palette_style', state.paletteStyle);
+        localStorage.setItem('lumo_palette_style', state.paletteStyle);
         if (paletteLabel) paletteLabel.textContent = opt.textContent;
         paletteMenu.querySelectorAll('.m3-dropdown-option').forEach(o => o.classList.remove('selected'));
         opt.classList.add('selected');
@@ -13494,7 +16503,7 @@ function bindCoverHoldZoom(wrapEl) {
   const btnToggleAdv = document.getElementById('btn-toggle-adv-section');
   const advWrapper = document.getElementById('adv-collapsible-wrapper');
   if (btnToggleAdv && advWrapper) {
-    const isAdvOpen = localStorage.getItem('riff_adv_open') === 'true';
+    const isAdvOpen = localStorage.getItem('lumo_adv_open') === 'true';
     if (isAdvOpen) {
       btnToggleAdv.classList.add('is-open');
       advWrapper.classList.add('is-open');
@@ -13502,7 +16511,7 @@ function bindCoverHoldZoom(wrapEl) {
     btnToggleAdv.addEventListener('click', () => {
       const nowOpen = advWrapper.classList.toggle('is-open');
       btnToggleAdv.classList.toggle('is-open', nowOpen);
-      localStorage.setItem('riff_adv_open', nowOpen ? 'true' : 'false');
+      localStorage.setItem('lumo_adv_open', nowOpen ? 'true' : 'false');
     });
   }
 
@@ -13589,21 +16598,21 @@ function bindCoverHoldZoom(wrapEl) {
 
   const btnSearchArtists = document.getElementById('btn-search-artists');
   if (btnSearchArtists) {
-    btnSearchArtists.classList.toggle('active', localStorage.getItem('riff_search_artists') !== '0');
+    btnSearchArtists.classList.toggle('active', localStorage.getItem('lumo_search_artists') !== '0');
     btnSearchArtists.addEventListener('click', () => {
       const v = !btnSearchArtists.classList.contains('active');
       btnSearchArtists.classList.toggle('active', v);
-      localStorage.setItem('riff_search_artists', v ? '1' : '0');
+      localStorage.setItem('lumo_search_artists', v ? '1' : '0');
     });
   }
 
   const btnSmooth = document.getElementById('btn-smooth-presets');
   if (btnSmooth) {
-    btnSmooth.classList.toggle('active', localStorage.getItem('riff_smooth_presets') !== 'false');
+    btnSmooth.classList.toggle('active', localStorage.getItem('lumo_smooth_presets') !== 'false');
     btnSmooth.addEventListener('click', () => {
       const v = !btnSmooth.classList.contains('active');
       btnSmooth.classList.toggle('active', v);
-      localStorage.setItem('riff_smooth_presets', String(v));
+      localStorage.setItem('lumo_smooth_presets', String(v));
     });
   }
   if (sidebarEl) {
@@ -13617,7 +16626,7 @@ function bindCoverHoldZoom(wrapEl) {
 
   const btnShowLocal = document.getElementById('btn-show-local');
   function updateShowLocalUI(animate = false) {
-    const show = localStorage.getItem('riff_show_local') !== 'false';
+    const show = localStorage.getItem('lumo_show_local') !== 'false';
     if (el.navLocal) el.navLocal.classList.toggle('nav-collapsed', !show);
     if (btnShowLocal) btnShowLocal.classList.toggle('active', show);
     if (!show && state.currentView === 'local') {
@@ -13637,15 +16646,15 @@ function bindCoverHoldZoom(wrapEl) {
   }
   if (btnShowLocal) {
     btnShowLocal.addEventListener('click', () => {
-      const show = localStorage.getItem('riff_show_local') !== 'false';
-      localStorage.setItem('riff_show_local', (!show) ? 'true' : 'false');
+      const show = localStorage.getItem('lumo_show_local') !== 'false';
+      localStorage.setItem('lumo_show_local', (!show) ? 'true' : 'false');
       updateShowLocalUI(true);
       refreshStacks();
     });
   }
   updateShowLocalUI(false);
 
-  const showAlbumsSaved = localStorage.getItem('riff_show_albums') === '1';
+  const showAlbumsSaved = localStorage.getItem('lumo_show_albums') === '1';
   document.body.classList.toggle('hide-albums-tab', !showAlbumsSaved);
   const btnShowAlbums = document.getElementById('btn-show-albums');
   if (btnShowAlbums) {
@@ -13653,7 +16662,7 @@ function bindCoverHoldZoom(wrapEl) {
     btnShowAlbums.addEventListener('click', () => {
       const next = !btnShowAlbums.classList.contains('active');
       btnShowAlbums.classList.toggle('active', next);
-      localStorage.setItem('riff_show_albums', next ? '1' : '0');
+      localStorage.setItem('lumo_show_albums', next ? '1' : '0');
       document.body.classList.toggle('hide-albums-tab', !next);
       if (!next && state.currentView === 'albums') {
         switchView('discover');
@@ -13667,14 +16676,14 @@ function bindCoverHoldZoom(wrapEl) {
     document.body.classList.toggle('no-hand-cursor', !!on);
   }
   const btnNoHandCursor = document.getElementById('btn-no-hand-cursor');
-  const noHand = localStorage.getItem('riff_no_hand_cursor') !== '0';
+  const noHand = localStorage.getItem('lumo_no_hand_cursor') !== '0';
   applyNoHandCursor(noHand);
   if (btnNoHandCursor) {
     btnNoHandCursor.classList.toggle('active', noHand);
     btnNoHandCursor.addEventListener('click', () => {
       const next = !btnNoHandCursor.classList.contains('active');
       btnNoHandCursor.classList.toggle('active', next);
-      localStorage.setItem('riff_no_hand_cursor', next ? '1' : '0');
+      localStorage.setItem('lumo_no_hand_cursor', next ? '1' : '0');
       applyNoHandCursor(next);
     });
   }
@@ -13683,14 +16692,14 @@ function bindCoverHoldZoom(wrapEl) {
     document.body.classList.toggle('highlight-buttons', !!on);
   }
   const btnHighlightButtons = document.getElementById('btn-highlight-buttons');
-  const initialHighlightButtons = localStorage.getItem('riff_highlight_buttons') !== '0';
+  const initialHighlightButtons = localStorage.getItem('lumo_highlight_buttons') !== '0';
   applyHighlightButtons(initialHighlightButtons);
   if (btnHighlightButtons) {
     btnHighlightButtons.classList.toggle('active', initialHighlightButtons);
     btnHighlightButtons.addEventListener('click', () => {
       const next = !btnHighlightButtons.classList.contains('active');
       btnHighlightButtons.classList.toggle('active', next);
-      localStorage.setItem('riff_highlight_buttons', next ? '1' : '0');
+      localStorage.setItem('lumo_highlight_buttons', next ? '1' : '0');
       applyHighlightButtons(next);
     });
   }
@@ -13714,8 +16723,8 @@ function bindCoverHoldZoom(wrapEl) {
     return '../../assets/' + val.replace(/^.*assets\//, '');
   }
   function applyHomeAppIcon(val) {
-    const chosen = val || localStorage.getItem('riff_app_icon') || '02-editor.svg';
-    localStorage.setItem('riff_app_icon', chosen);
+    const chosen = val || localStorage.getItem('lumo_app_icon') || '02-editor.svg';
+    localStorage.setItem('lumo_app_icon', chosen);
     const homeImg = document.getElementById('nav-home-app-icon');
     if (homeImg) homeImg.src = resolveAppIconSrc(chosen);
     const grid = document.getElementById('app-icon-picker-grid');
@@ -13727,7 +16736,7 @@ function bindCoverHoldZoom(wrapEl) {
   }
   function initAppIconPicker() {
     const grid = document.getElementById('app-icon-picker-grid');
-    const saved = localStorage.getItem('riff_app_icon') || '02-editor.svg';
+    const saved = localStorage.getItem('lumo_app_icon') || '02-editor.svg';
     if (grid) {
       grid.innerHTML = '';
       RIFF_APP_ICONS.forEach(item => {
@@ -13805,8 +16814,8 @@ function bindCoverHoldZoom(wrapEl) {
 
   const btnWavyProgress = document.getElementById('btn-wavy-progress');
   function updateWavyProgressUI() {
-    const isWavy = localStorage.getItem('riff_wavy_progress') !== 'false';
-    const isPerf = localStorage.getItem('riff_perf_mode') === '1' || localStorage.getItem('riff_perf_mode') === 'true';
+    const isWavy = localStorage.getItem('lumo_wavy_progress') === 'true';
+    const isPerf = localStorage.getItem('lumo_perf_mode') === '1' || localStorage.getItem('lumo_perf_mode') === 'true';
     document.body.classList.toggle('no-wavy', isPerf ? true : !isWavy);
     if (btnWavyProgress) {
       btnWavyProgress.classList.toggle('active', isWavy);
@@ -13815,7 +16824,7 @@ function bindCoverHoldZoom(wrapEl) {
 
   const btnProgressKnob = document.getElementById('btn-progress-knob');
   function updateProgressKnobUI() {
-    const isEnabled = localStorage.getItem('riff_progress_knob') === 'true';
+    const isEnabled = localStorage.getItem('lumo_progress_knob') !== 'false';
     document.body.classList.toggle('no-knob', !isEnabled);
     if (btnProgressKnob) {
       btnProgressKnob.classList.toggle('active', isEnabled);
@@ -13824,7 +16833,7 @@ function bindCoverHoldZoom(wrapEl) {
 
   const btnProgressBg = document.getElementById('btn-progress-bg');
   function updateProgressBgUI() {
-    const isEnabled = localStorage.getItem('riff_progress_bg') === 'true';
+    const isEnabled = localStorage.getItem('lumo_progress_bg') !== 'false';
     document.body.classList.toggle('no-progress-bg', !isEnabled);
     if (btnProgressBg) {
       btnProgressBg.classList.toggle('active', isEnabled);
@@ -13873,8 +16882,8 @@ function bindCoverHoldZoom(wrapEl) {
   }
 
   function m3cEnabled() {
-    const barOn = localStorage.getItem('riff_m3_cover') !== '0';
-    const heroOn = localStorage.getItem('riff_m3_hero_covers') === '1';
+    const barOn = localStorage.getItem('lumo_m3_cover') !== '0';
+    const heroOn = localStorage.getItem('lumo_m3_hero_covers') === '1';
     return (barOn || heroOn) && !document.body.classList.contains('perf');
   }
   function m3cInit() {
@@ -14069,14 +17078,34 @@ function bindCoverHoldZoom(wrapEl) {
   });
 
   function applyPerfMode(on) {
-    document.body.classList.toggle('perf', !!on);
-    const isWavy = localStorage.getItem('riff_wavy_progress') !== 'false';
-    document.body.classList.toggle('no-wavy', on ? true : !isWavy);
+    const enabled = !!on;
+    document.body.classList.toggle('perf', enabled);
+    const isWavy = localStorage.getItem('lumo_wavy_progress') === 'true';
+    document.body.classList.toggle('no-wavy', enabled ? true : !isWavy);
     syncBgVideoPlayback();
     applyM3Cover();
+    if (enabled) {
+      // Drop every visual loop, the audio analyser and GPU-heavy canvases.
+      if (typeof stopVisualizers === 'function') stopVisualizers();
+      if (audioEngine && audioEngine.setAnalyserEnabled) audioEngine.setAnalyserEnabled(false);
+      if (typeof applyBarWave === 'function') applyBarWave(false);
+      try {
+        ['squiggly-canvas', 'visualizer-canvas', 'tvk-visualizer-canvas', 'playbar-bg-visualizer'].forEach(id => {
+          const canvas = document.getElementById(id);
+          if (!canvas) return;
+          const ctx = canvas.getContext('2d');
+          if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+        });
+      } catch (e) {}
+      setTimeout(() => { try { if (window.gc) window.gc(); } catch (e) {} }, 400);
+    } else {
+      if (typeof applyBarWave === 'function') applyBarWave(localStorage.getItem('lumo_bar_wave') !== '0');
+      hasDrawnPausedFrame = false;
+      if (state.isPlaying) startVisualizers();
+    }
   }
   const btnBarWave = document.getElementById('btn-bar-wave');
-  const barWaveOn = localStorage.getItem('riff_bar_wave') !== '0';
+  const barWaveOn = localStorage.getItem('lumo_bar_wave') !== '0';
   function applyBarWave(on) {
     const vc = document.getElementById('visualizer-container');
     if (vc) {
@@ -14111,13 +17140,13 @@ function bindCoverHoldZoom(wrapEl) {
     btnBarWave.addEventListener('click', () => {
       const next = !btnBarWave.classList.contains('active');
       btnBarWave.classList.toggle('active', next);
-      localStorage.setItem('riff_bar_wave', next ? '1' : '0');
+      localStorage.setItem('lumo_bar_wave', next ? '1' : '0');
       applyBarWave(next);
     });
   }
 
   const barVizPosGroup = document.getElementById('bar-viz-pos-group');
-  const initialBarVizPos = localStorage.getItem('riff_bar_viz_pos') || 'behind';
+  const initialBarVizPos = localStorage.getItem('lumo_bar_viz_pos') || 'behind';
   function applyBarVizPos(pos) {
     document.body.classList.toggle('bar-viz-behind', pos === 'behind');
     if (barVizPosGroup) {
@@ -14132,7 +17161,7 @@ function bindCoverHoldZoom(wrapEl) {
     barVizPosGroup.querySelectorAll('.theme-mode-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const pos = btn.getAttribute('data-bar-viz-pos') || 'behind';
-        localStorage.setItem('riff_bar_viz_pos', pos);
+        localStorage.setItem('lumo_bar_viz_pos', pos);
         applyBarVizPos(pos);
       });
     });
@@ -14140,7 +17169,7 @@ function bindCoverHoldZoom(wrapEl) {
 
   const sliderBarVizOpacity = document.getElementById('slider-bar-viz-opacity');
   const valBarVizOpacity = document.getElementById('val-bar-viz-opacity');
-  const initialBarVizOpacity = localStorage.getItem('riff_bar_viz_opacity') || '22';
+  const initialBarVizOpacity = localStorage.getItem('lumo_bar_viz_opacity') || '22';
   function applyBarVizOpacity(v) {
     const num = parseInt(v, 10);
     document.documentElement.style.setProperty('--bar-viz-opacity', (num / 100).toString());
@@ -14151,7 +17180,7 @@ function bindCoverHoldZoom(wrapEl) {
   if (sliderBarVizOpacity) {
     const onOpInput = (e) => {
       const v = e.target.value;
-      localStorage.setItem('riff_bar_viz_opacity', v);
+      localStorage.setItem('lumo_bar_viz_opacity', v);
       applyBarVizOpacity(v);
     };
     sliderBarVizOpacity.addEventListener('input', onOpInput);
@@ -14161,14 +17190,14 @@ function bindCoverHoldZoom(wrapEl) {
   const btnVizConnected = document.getElementById('btn-viz-connected');
   const btnTvkVizConnected = document.getElementById('btn-tvk-viz-connected');
   function syncVizConnectedUI() {
-    const isConn = localStorage.getItem('riff_viz_connected') === '1';
+    const isConn = localStorage.getItem('lumo_viz_connected') === '1';
     if (btnVizConnected) btnVizConnected.classList.toggle('active', isConn);
     if (btnTvkVizConnected) btnTvkVizConnected.classList.toggle('active', isConn);
   }
   function toggleVizConnected() {
-    const isConn = localStorage.getItem('riff_viz_connected') === '1';
+    const isConn = localStorage.getItem('lumo_viz_connected') === '1';
     const next = !isConn;
-    localStorage.setItem('riff_viz_connected', next ? '1' : '0');
+    localStorage.setItem('lumo_viz_connected', next ? '1' : '0');
     syncVizConnectedUI();
   }
   if (btnVizConnected) btnVizConnected.addEventListener('click', toggleVizConnected);
@@ -14177,20 +17206,20 @@ function bindCoverHoldZoom(wrapEl) {
 
   const toggleM3Cover = document.getElementById('toggle-m3-cover');
   if (toggleM3Cover) {
-    const saved = localStorage.getItem('riff_m3_cover');
+    const saved = localStorage.getItem('lumo_m3_cover');
     const isM3On = saved !== '0';
     toggleM3Cover.classList.toggle('active', isM3On);
     toggleM3Cover.addEventListener('click', () => {
       const next = !toggleM3Cover.classList.contains('active');
       toggleM3Cover.classList.toggle('active', next);
-      localStorage.setItem('riff_m3_cover', next ? '1' : '0');
+      localStorage.setItem('lumo_m3_cover', next ? '1' : '0');
       applyM3Cover();
     });
   }
 
   const toggleM3Hero = document.getElementById('toggle-m3-hero-covers');
   if (toggleM3Hero) {
-    const isHeroOn = localStorage.getItem('riff_m3_hero_covers') === '1';
+    const isHeroOn = localStorage.getItem('lumo_m3_hero_covers') === '1';
     toggleM3Hero.classList.toggle('active', isHeroOn);
     document.body.classList.toggle('m3-hero-covers-on', isHeroOn);
     toggleM3Hero.onclick = (e) => {
@@ -14199,34 +17228,34 @@ function bindCoverHoldZoom(wrapEl) {
       const next = !toggleM3Hero.classList.contains('active');
       toggleM3Hero.classList.toggle('active', next);
       document.body.classList.toggle('m3-hero-covers-on', next);
-      localStorage.setItem('riff_m3_hero_covers', next ? '1' : '0');
+      localStorage.setItem('lumo_m3_hero_covers', next ? '1' : '0');
       if (typeof m3cStart === 'function') m3cStart();
     };
   }
 
   const toggleExplicitTag = document.getElementById('toggle-explicit-tag');
-  const isExplicitOn = localStorage.getItem('riff_show_explicit') !== '0';
+  const isExplicitOn = localStorage.getItem('lumo_show_explicit') !== '0';
   document.body.classList.toggle('hide-explicit-badges', !isExplicitOn);
   if (toggleExplicitTag) {
     toggleExplicitTag.classList.toggle('active', isExplicitOn);
     toggleExplicitTag.addEventListener('click', () => {
       const next = !toggleExplicitTag.classList.contains('active');
       toggleExplicitTag.classList.toggle('active', next);
-      localStorage.setItem('riff_show_explicit', next ? '1' : '0');
+      localStorage.setItem('lumo_show_explicit', next ? '1' : '0');
       document.body.classList.toggle('hide-explicit-badges', !next);
     });
   }
 
-  updateTvkVisualizerSetting(localStorage.getItem('riff_tvk_visualizer') !== 'false');
-  updateTvkVisualizerLyricsSetting(localStorage.getItem('riff_tvk_visualizer_lyrics') !== 'false');
-  updateTvkVisualizerOpacity(parseInt(localStorage.getItem('riff_tvk_visualizer_opacity') || '85', 10));
+  updateTvkVisualizerSetting(localStorage.getItem('lumo_tvk_visualizer') !== 'false');
+  updateTvkVisualizerLyricsSetting(localStorage.getItem('lumo_tvk_visualizer_lyrics') !== 'false');
+  updateTvkVisualizerOpacity(parseInt(localStorage.getItem('lumo_tvk_visualizer_opacity') || '85', 10));
 
   const btnPerfMode = document.getElementById('btn-perf-mode');
-  const initialPerfMode = localStorage.getItem('riff_perf_mode') === '1';
+  const initialPerfMode = localStorage.getItem('lumo_perf_mode') === '1';
   applyPerfMode(initialPerfMode);
   document.body.classList.toggle('perf', initialPerfMode);
   document.documentElement.classList.remove('force-reduced-motion');
-  localStorage.setItem('riff_perf_mode', initialPerfMode ? '1' : '0');
+  localStorage.setItem('lumo_perf_mode', initialPerfMode ? '1' : '0');
   if (btnPerfMode) btnPerfMode.classList.toggle('active', initialPerfMode);
   applyLyricsEase();
   updateNavIndicator(true);
@@ -14234,26 +17263,27 @@ function bindCoverHoldZoom(wrapEl) {
     btnPerfMode.addEventListener('click', () => {
       const next = !btnPerfMode.classList.contains('active');
       btnPerfMode.classList.toggle('active', next);
-      localStorage.setItem('riff_perf_mode', next ? '1' : '0');
+      localStorage.setItem('lumo_perf_mode', next ? '1' : '0');
       applyPerfMode(next);
     });
   }
 
   if (btnWavyProgress) {
     btnWavyProgress.addEventListener('click', () => {
-      const isWavy = localStorage.getItem('riff_wavy_progress') !== 'false';
+      const isWavy = localStorage.getItem('lumo_wavy_progress') === 'true';
       const next = !isWavy;
-      localStorage.setItem('riff_wavy_progress', next ? 'true' : 'false');
+      localStorage.setItem('lumo_wavy_progress', next ? 'true' : 'false');
       updateWavyProgressUI();
       hasDrawnPausedFrame = false;
+      if (!animationFrameId && typeof startVisualizers === 'function') startVisualizers();
     });
   }
 
   if (btnProgressKnob) {
     btnProgressKnob.addEventListener('click', () => {
-      const isKnob = localStorage.getItem('riff_progress_knob') === 'true';
+      const isKnob = localStorage.getItem('lumo_progress_knob') !== 'false';
       const next = !isKnob;
-      localStorage.setItem('riff_progress_knob', next ? 'true' : 'false');
+      localStorage.setItem('lumo_progress_knob', next ? 'true' : 'false');
       updateProgressKnobUI();
       hasDrawnPausedFrame = false;
       if (!animationFrameId && typeof startVisualizers === 'function') startVisualizers();
@@ -14262,9 +17292,9 @@ function bindCoverHoldZoom(wrapEl) {
 
   if (btnProgressBg) {
     btnProgressBg.addEventListener('click', () => {
-      const isBg = localStorage.getItem('riff_progress_bg') === 'true';
+      const isBg = localStorage.getItem('lumo_progress_bg') !== 'false';
       const next = !isBg;
-      localStorage.setItem('riff_progress_bg', next ? 'true' : 'false');
+      localStorage.setItem('lumo_progress_bg', next ? 'true' : 'false');
       updateProgressBgUI();
       hasDrawnPausedFrame = false;
       if (!animationFrameId && typeof startVisualizers === 'function') startVisualizers();
@@ -14276,7 +17306,7 @@ function bindCoverHoldZoom(wrapEl) {
   updateProgressBgUI();
 
   const btnTrayOnClose = document.getElementById('btn-tray-on-close');
-  const storedTrayOnClose = localStorage.getItem('riff_tray_on_close');
+  const storedTrayOnClose = localStorage.getItem('lumo_tray_on_close');
   const savedTrayOnClose = storedTrayOnClose !== null
     ? storedTrayOnClose === 'true'
     : /Windows|Mac/.test(navigator.userAgent);
@@ -14285,7 +17315,7 @@ function bindCoverHoldZoom(wrapEl) {
     btnTrayOnClose.addEventListener('click', () => {
       const next = !btnTrayOnClose.classList.contains('active');
       btnTrayOnClose.classList.toggle('active', next);
-      localStorage.setItem('riff_tray_on_close', next ? 'true' : 'false');
+      localStorage.setItem('lumo_tray_on_close', next ? 'true' : 'false');
       if (window.electronAPI && window.electronAPI.setTrayOnClose) {
         window.electronAPI.setTrayOnClose(next);
       }
@@ -14302,7 +17332,7 @@ function bindCoverHoldZoom(wrapEl) {
       const next = !btnMultiInstance.classList.contains('active');
       btnMultiInstance.classList.toggle('active', next);
       window.electronAPI.setMultiInstance(next);
-      showToast(next ? 'Multiple instances will be allowed after restart' : 'Single instance mode after restart', 'info');
+      showToastNow(next ? 'Multiple instances will be allowed after restart' : 'Single instance mode after restart', 'info');
     });
   }
 
@@ -14311,7 +17341,7 @@ function bindCoverHoldZoom(wrapEl) {
     document.querySelectorAll('#view-settings .settings-section').forEach(s => s.classList.toggle('cat-hidden', s.dataset.cat !== cat));
     document.querySelectorAll('#settings-nav .settings-nav-btn').forEach(b => b.classList.toggle('active', b.dataset.cat === cat));
     const pane = document.querySelector('#view-settings .settings-pane'); if (pane) pane.scrollTop = 0;
-    try { localStorage.setItem('riff_settings_cat', cat); } catch (e) {}
+    try { localStorage.setItem('lumo_settings_cat', cat); } catch (e) {}
     if (cat === 'custom-themes' && typeof renderThemeCards === 'function') renderThemeCards();
     if (cat === 'plugins' && typeof reloadPluginsList === 'function') reloadPluginsList();
     refreshStacks();
@@ -14373,7 +17403,7 @@ function bindCoverHoldZoom(wrapEl) {
       s.textContent = t.css;
       document.head.appendChild(s);
     });
-    const userCss = localStorage.getItem('riff_custom_css') || '';
+    const userCss = localStorage.getItem('lumo_custom_css') || '';
     if (userCss.trim()) {
       const s = document.createElement('style');
       s.dataset.riffCustom = 'user';
@@ -14384,9 +17414,9 @@ function bindCoverHoldZoom(wrapEl) {
   }
 
   function resetCustomStyling() {
-    const userCss = localStorage.getItem('riff_custom_css') || '';
-    if (userCss.trim()) localStorage.setItem('riff_custom_css_backup', userCss);
-    localStorage.removeItem('riff_custom_css');
+    const userCss = localStorage.getItem('lumo_custom_css') || '';
+    if (userCss.trim()) localStorage.setItem('lumo_custom_css_backup', userCss);
+    localStorage.removeItem('lumo_custom_css');
     customThemes.forEach((t) => { t.enabled = false; });
     if (window.electronAPI && window.electronAPI.disableAllThemes) window.electronAPI.disableAllThemes();
     if (typeof cssEditorInstance !== 'undefined' && cssEditorInstance) cssEditorInstance.setValue('');
@@ -14509,7 +17539,7 @@ function bindCoverHoldZoom(wrapEl) {
     showToast(`Plugin ${file} failed: ${e && e.message ? e.message : e}`, 'error');
   }
   function createPluginApi(p) {
-    const prefix = `riff_plugin_${p.file}_`;
+    const prefix = `lumo_plugin_${p.file}_`;
     return {
       plugin: { file: p.file, name: p.name, author: p.author, version: p.version },
       on(event, cb) {
@@ -14537,7 +17567,7 @@ function bindCoverHoldZoom(wrapEl) {
       sameTrack: (a, b) => isSameTrack(a, b),
       shuffle: {
         // fn({ queue, queueIndex, context, current }) -> track | Promise<track> | null.
-        // Returning null/undefined falls back to Riff's default random pick.
+        // Returning null/undefined falls back to Lumo's default random pick.
         setProvider(fn) {
           shuffleProvider = typeof fn === 'function' ? { fn, file: p.file } : null;
           return () => { if (shuffleProvider && shuffleProvider.file === p.file) shuffleProvider = null; };
@@ -14606,7 +17636,7 @@ function bindCoverHoldZoom(wrapEl) {
     document.querySelectorAll(`style[data-plugin="${p.file}"]`).forEach((n) => n.remove());
     const hadStop = !!(entry && entry.stop);
     loadedPlugins.delete(p.file);
-    if (!silent && !hadStop) showToast(`Restart Riff to fully unload "${p.name}"`, 'info');
+    if (!silent && !hadStop) showToast(`Restart Lumo to fully unload "${p.name}"`, 'info');
   }
   let pluginsCache = [];
   function renderPluginCards() {
@@ -14713,7 +17743,7 @@ function bindCoverHoldZoom(wrapEl) {
     defineRiffMonacoTheme(monaco);
     if (cssEditorInstance) { cssEditorInstance.focus(); return; }
     cssEditorInstance = monaco.editor.create(document.getElementById('css-editor-host'), {
-      value: localStorage.getItem('riff_custom_css') || '/* Your CSS goes here. Example:\n.btn-pill-primary { border-radius: 8px; }\n*/\n',
+      value: localStorage.getItem('lumo_custom_css') || '/* Your CSS goes here. Example:\n.btn-pill-primary { border-radius: 8px; }\n*/\n',
       language: 'css',
       theme: 'riff',
       automaticLayout: true,
@@ -14735,7 +17765,7 @@ function bindCoverHoldZoom(wrapEl) {
     cssEditorInstance.onDidChangeModelContent(() => {
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
-        localStorage.setItem('riff_custom_css', cssEditorInstance.getValue());
+        localStorage.setItem('lumo_custom_css', cssEditorInstance.getValue());
         applyCustomStyles();
       }, 350);
     });
@@ -14748,17 +17778,17 @@ function bindCoverHoldZoom(wrapEl) {
   if (btnCssClose) btnCssClose.addEventListener('click', () => document.getElementById('css-editor').classList.add('hidden'));
   const btnCssClear = document.getElementById('btn-css-clear');
   if (btnCssClear) btnCssClear.addEventListener('click', () => {
-    const current = localStorage.getItem('riff_custom_css') || '';
-    if (current.trim()) localStorage.setItem('riff_custom_css_backup', current);
+    const current = localStorage.getItem('lumo_custom_css') || '';
+    if (current.trim()) localStorage.setItem('lumo_custom_css_backup', current);
     if (cssEditorInstance) cssEditorInstance.setValue('');
-    else { localStorage.removeItem('riff_custom_css'); applyCustomStyles(); }
+    else { localStorage.removeItem('lumo_custom_css'); applyCustomStyles(); }
   });
   const btnCssRestore = document.getElementById('btn-css-restore');
   if (btnCssRestore) btnCssRestore.addEventListener('click', () => {
-    const backup = localStorage.getItem('riff_custom_css_backup');
+    const backup = localStorage.getItem('lumo_custom_css_backup');
     if (!backup) { showToast('Nothing to restore', 'info'); return; }
     if (cssEditorInstance) cssEditorInstance.setValue(backup);
-    else { localStorage.setItem('riff_custom_css', backup); applyCustomStyles(); }
+    else { localStorage.setItem('lumo_custom_css', backup); applyCustomStyles(); }
   });
 
   function addSliderTicks(input) {
@@ -14814,13 +17844,13 @@ function bindCoverHoldZoom(wrapEl) {
     settingWinMediaKeys.style.display = isWindows ? '' : 'none';
   }
 
-  const savedWinMediaKeys = localStorage.getItem('riff_global_media_keys') !== 'false';
+  const savedWinMediaKeys = localStorage.getItem('lumo_global_media_keys') !== 'false';
   if (btnWinMediaKeys) {
     btnWinMediaKeys.classList.toggle('active', savedWinMediaKeys);
     btnWinMediaKeys.addEventListener('click', () => {
       const next = !btnWinMediaKeys.classList.contains('active');
       btnWinMediaKeys.classList.toggle('active', next);
-      localStorage.setItem('riff_global_media_keys', next ? 'true' : 'false');
+      localStorage.setItem('lumo_global_media_keys', next ? 'true' : 'false');
       if (window.electronAPI && window.electronAPI.setMediaKeys) {
         window.electronAPI.setMediaKeys(next);
       }
@@ -14853,7 +17883,7 @@ function bindCoverHoldZoom(wrapEl) {
       setSwitch(document.getElementById('btn-no-hand-cursor'), d.toggles.riff_no_hand_cursor);
       setSwitch(document.getElementById('btn-perf-mode'), d.toggles.riff_perf_mode);
       if (d.toggles.riff_custom_bg_enabled && d.background) {
-        localStorage.setItem('riff_bg_url', d.background);
+        localStorage.setItem('lumo_bg_url', d.background);
         if (typeof updateCustomBg === 'function') updateCustomBg();
         if (typeof onBackgroundChanged === 'function') onBackgroundChanged('custom', true);
       }
@@ -14869,14 +17899,14 @@ function bindCoverHoldZoom(wrapEl) {
       const btnConfirm = document.getElementById('btn-confirm-spotify-import');
       if (btnConfirm) btnConfirm.click();
     }
-    showToast('Welcome to Riff!', 'info');
+    showToast('Welcome to Lumo!', 'info');
   }
   if (window.electronAPI && window.electronAPI.onWelcomeResult) window.electronAPI.onWelcomeResult((d) => applyWelcomeResult(d));
 
   function checkCompactLayout() {
     const isMini = window.innerWidth <= 520;
     document.body.classList.toggle('mini', isMini);
-    const savedLyricsOn = localStorage.getItem('riff_mini_lyrics') === '1';
+    const savedLyricsOn = localStorage.getItem('lumo_mini_lyrics') === '1';
     document.body.classList.toggle('mini-lyrics-on', isMini && savedLyricsOn);
     const btn = document.getElementById('btn-mini-lyrics');
     if (btn) btn.classList.toggle('active', isMini && savedLyricsOn);
@@ -14892,7 +17922,7 @@ function bindCoverHoldZoom(wrapEl) {
     if (window.electronAPI && window.electronAPI.toggleMiniWindow) {
       const isNowMini = await window.electronAPI.toggleMiniWindow();
       if (isNowMini) {
-        const savedLyricsOn = localStorage.getItem('riff_mini_lyrics') === '1';
+        const savedLyricsOn = localStorage.getItem('lumo_mini_lyrics') === '1';
         if (savedLyricsOn && window.electronAPI.setMiniLyrics) {
           await window.electronAPI.setMiniLyrics(true);
         }
@@ -14915,7 +17945,7 @@ function bindCoverHoldZoom(wrapEl) {
   if (btnMiniLyrics) {
     btnMiniLyrics.addEventListener('click', async () => {
       const nextOn = !document.body.classList.contains('mini-lyrics-on');
-      localStorage.setItem('riff_mini_lyrics', nextOn ? '1' : '0');
+      localStorage.setItem('lumo_mini_lyrics', nextOn ? '1' : '0');
       document.body.classList.toggle('mini-lyrics-on', nextOn);
       btnMiniLyrics.classList.toggle('active', nextOn);
       if (window.electronAPI && window.electronAPI.setMiniLyrics) {
@@ -14931,20 +17961,20 @@ function bindCoverHoldZoom(wrapEl) {
   const sliderCrossfade = document.getElementById('slider-crossfade');
   const valCrossfade = document.getElementById('val-crossfade');
   if (sliderCrossfade) {
-    const cf = parseInt(localStorage.getItem('riff_crossfade') || '0', 10);
+    const cf = parseInt(localStorage.getItem('lumo_crossfade') || '0', 10);
     sliderCrossfade.value = cf;
     if (valCrossfade) valCrossfade.textContent = cf > 0 ? `${cf}s` : 'Off';
     sliderCrossfade.addEventListener('input', (e) => {
       const v = parseInt(e.target.value, 10);
       if (valCrossfade) valCrossfade.textContent = v > 0 ? `${v}s` : 'Off';
-      localStorage.setItem('riff_crossfade', String(v));
+      localStorage.setItem('lumo_crossfade', String(v));
     });
   }
 
   if (el.btnTrEnabled) {
     el.btnTrEnabled.addEventListener('click', () => {
       state.trEnabled = !state.trEnabled;
-      localStorage.setItem('riff_tr_enabled', String(state.trEnabled));
+      localStorage.setItem('lumo_tr_enabled', String(state.trEnabled));
       updateLyricsTranslationUI();
       if (!state.trEnabled) {
         state.trActive = false;
@@ -14985,7 +18015,7 @@ function bindCoverHoldZoom(wrapEl) {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
           state.trLang = item.code;
-          localStorage.setItem('riff_tr_lang', state.trLang);
+          localStorage.setItem('lumo_tr_lang', state.trLang);
           if (trLangLabel) trLangLabel.textContent = text;
           trLangMenu.querySelectorAll('.m3-dropdown-option').forEach(o => o.classList.remove('selected'));
           btn.classList.add('selected');
@@ -15059,7 +18089,7 @@ function bindCoverHoldZoom(wrapEl) {
   const uiLangSearch = document.getElementById('ui-lang-search');
 
   if (uiLangDropdown && uiLangTrigger && uiLangMenu) {
-    const curLang = localStorage.getItem('riff_ui_lang') || 'en';
+    const curLang = localStorage.getItem('lumo_ui_lang') || 'en';
     const foundCur = TRANSLATION_LANGUAGES.find(l => l.code === curLang);
     if (foundCur && uiLangLabel) {
       uiLangLabel.textContent = `${foundCur.flag} ${foundCur.name} (${foundCur.code})`;
@@ -15080,8 +18110,8 @@ function bindCoverHoldZoom(wrapEl) {
         }
         btn.addEventListener('click', async (e) => {
           e.stopPropagation();
-          const prevLang = localStorage.getItem('riff_ui_lang') || 'en';
-          localStorage.setItem('riff_ui_lang', item.code);
+          const prevLang = localStorage.getItem('lumo_ui_lang') || 'en';
+          localStorage.setItem('lumo_ui_lang', item.code);
           if (uiLangLabel) uiLangLabel.textContent = text;
           uiLangMenu.querySelectorAll('.m3-dropdown-option').forEach(o => o.classList.remove('selected'));
           btn.classList.add('selected');
@@ -15188,7 +18218,7 @@ function bindCoverHoldZoom(wrapEl) {
   if (el.btnTrAuto) {
     el.btnTrAuto.addEventListener('click', () => {
       state.trAuto = !state.trAuto;
-      localStorage.setItem('riff_tr_auto', String(state.trAuto));
+      localStorage.setItem('lumo_tr_auto', String(state.trAuto));
       updateLyricsTranslationUI();
       if (state.trEnabled && state.trAuto && !state.trActive) {
         state.trActive = true;
@@ -15220,7 +18250,7 @@ function bindCoverHoldZoom(wrapEl) {
       opt.addEventListener('click', (e) => {
         e.stopPropagation();
         const val = opt.dataset.value;
-        localStorage.setItem('riff_lyrics_ease', val);
+        localStorage.setItem('lumo_lyrics_ease', val);
         if (lyricsEaseLabel) lyricsEaseLabel.textContent = opt.textContent;
         lyricsEaseMenu.querySelectorAll('.m3-dropdown-option').forEach(o => o.classList.toggle('selected', o === opt));
         applyLyricsEase();
@@ -15243,7 +18273,7 @@ function bindCoverHoldZoom(wrapEl) {
     sliderLyricsSpeed.addEventListener('input', () => {
       const val = parseInt(sliderLyricsSpeed.value, 10) / 10;
       valLyricsSpeed.textContent = `${val.toFixed(1)}x`;
-      localStorage.setItem('riff_lyrics_speed', val.toString());
+      localStorage.setItem('lumo_lyrics_speed', val.toString());
       applyLyricsEase();
     });
   }
@@ -15254,7 +18284,7 @@ function bindCoverHoldZoom(wrapEl) {
   const lyricsSourceMenu = document.getElementById('lyrics-source-menu');
 
   if (lyricsSourceDropdown && lyricsSourceTrigger && lyricsSourceMenu) {
-    const curSource = localStorage.getItem('riff_lyrics_source') === 'genius' ? 'genius' : 'lrclib';
+    const curSource = localStorage.getItem('lumo_lyrics_source') === 'genius' ? 'genius' : 'lrclib';
     lyricsSourceMenu.querySelectorAll('.m3-dropdown-option').forEach(opt => {
       const isSel = opt.dataset.value === curSource;
       opt.classList.toggle('selected', isSel);
@@ -15270,7 +18300,7 @@ function bindCoverHoldZoom(wrapEl) {
       opt.addEventListener('click', (e) => {
         e.stopPropagation();
         const val = opt.dataset.value;
-        localStorage.setItem('riff_lyrics_source', val);
+        localStorage.setItem('lumo_lyrics_source', val);
         if (lyricsSourceLabel) lyricsSourceLabel.textContent = opt.textContent;
         lyricsSourceMenu.querySelectorAll('.m3-dropdown-option').forEach(o => o.classList.toggle('selected', o === opt));
         lyricsSourceDropdown.classList.remove('open');
@@ -15292,7 +18322,7 @@ function bindCoverHoldZoom(wrapEl) {
   const wordSourceMenu = document.getElementById('word-source-menu');
 
   if (wordSourceDropdown && wordSourceTrigger && wordSourceMenu) {
-    const curWordSource = localStorage.getItem('riff_word_source') || 'auto';
+    const curWordSource = localStorage.getItem('lumo_word_source') || 'auto';
     wordSourceMenu.querySelectorAll('.m3-dropdown-option').forEach(opt => {
       const isSel = opt.dataset.value === curWordSource;
       opt.classList.toggle('selected', isSel);
@@ -15308,7 +18338,7 @@ function bindCoverHoldZoom(wrapEl) {
       opt.addEventListener('click', (e) => {
         e.stopPropagation();
         const val = opt.dataset.value;
-        localStorage.setItem('riff_word_source', val);
+        localStorage.setItem('lumo_word_source', val);
         if (wordSourceLabel) wordSourceLabel.textContent = opt.textContent;
         wordSourceMenu.querySelectorAll('.m3-dropdown-option').forEach(o => o.classList.toggle('selected', o === opt));
         wordSourceDropdown.classList.remove('open');
@@ -15346,7 +18376,7 @@ function bindCoverHoldZoom(wrapEl) {
       opt.addEventListener('click', (e) => {
         e.stopPropagation();
         const val = opt.dataset.value;
-        localStorage.setItem('riff_lyrics_word_style', val);
+        localStorage.setItem('lumo_lyrics_word_style', val);
         if (lyricsWordStyleLabel) lyricsWordStyleLabel.textContent = opt.textContent;
         lyricsWordStyleMenu.querySelectorAll('.m3-dropdown-option').forEach(o => o.classList.toggle('selected', o === opt));
         lyricsWordStyleDropdown.classList.remove('open');
@@ -15370,34 +18400,56 @@ function bindCoverHoldZoom(wrapEl) {
     sliderLyricsTightness.addEventListener('input', () => {
       const val = parseInt(sliderLyricsTightness.value, 10);
       valLyricsTightness.textContent = `${val}%`;
-      localStorage.setItem('riff_lyrics_gradient_tightness', val.toString());
-      localStorage.setItem('riff_gradient_tight', val.toString());
+      localStorage.setItem('lumo_lyrics_gradient_tightness', val.toString());
+      localStorage.setItem('lumo_gradient_tight', val.toString());
       applyLyricsGradientTightness();
       updateActiveGradient();
     });
   }
 
-  if (el.btnResetAudio) {
-    el.btnResetAudio.addEventListener('click', () => {
+  const btnResetAudio = el.btnResetAudio || document.getElementById('btn-reset-audio');
+  if (btnResetAudio) {
+    btnResetAudio.addEventListener('click', () => {
+      initAudioContext();
       state.activePresetId = 'p_default';
       state.audioSettings = { speed: 1.0, speedPitch: 1.0, pitch: 0, reverb: 0, distortion: 0, volume: 1.0, echo: 0, eq: { low: 0, mid: 0, high: 0 }, eqBands: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] };
       state.hqSettings = { engine: 'hqmusic-3', preset: 'studio', vocal: 0, air: 0, bass: 0 };
       state.hqEnabled = false;
+      if (el.btnToggleHqAudio) el.btnToggleHqAudio.classList.remove('active');
+      const hqWrap = document.getElementById('hq-panel-wrapper');
+      if (hqWrap) hqWrap.classList.remove('expanded');
+      const hqCard = document.querySelector('.hq-enhancer-card');
+      if (hqCard) hqCard.classList.remove('is-expanded');
+
+      const toggleNorm = document.getElementById('toggle-normalize');
+      if (toggleNorm) {
+        toggleNorm.classList.remove('active');
+        localStorage.setItem('lumo_audio_normalize', '0');
+        if (typeof resetLevelWatcher === 'function') resetLevelWatcher();
+      }
+
+      localStorage.removeItem('lumo_audio_settings');
+      localStorage.removeItem('lumo_hq_settings');
+      localStorage.removeItem('lumo_hq_enabled');
+      localStorage.removeItem('lumo_active_preset');
+
       syncSettingsSlidersToState();
       applyAudioSettings();
       applyHqSettings();
       renderPresets();
+      if (el.settingsModifiedDot) el.settingsModifiedDot.classList.add('hidden');
+      if (typeof showToast === 'function') showToast('Audio settings reset');
     });
   }
 
   const toggleNormalize = document.getElementById('toggle-normalize');
   if (toggleNormalize) {
-    const isNorm = localStorage.getItem('riff_audio_normalize') === '1';
+    const isNorm = localStorage.getItem('lumo_audio_normalize') === '1';
     toggleNormalize.classList.toggle('active', isNorm);
     toggleNormalize.addEventListener('click', () => {
       const active = !toggleNormalize.classList.contains('active');
       toggleNormalize.classList.toggle('active', active);
-      localStorage.setItem('riff_audio_normalize', active ? '1' : '0');
+      localStorage.setItem('lumo_audio_normalize', active ? '1' : '0');
       if (!active) resetLevelWatcher();
     });
   }
@@ -15459,7 +18511,7 @@ function bindCoverHoldZoom(wrapEl) {
       if (!modal) return;
       canNativeInstall = !!d.canInstall;
       fallbackReleaseUrl = d.htmlUrl || d.url || 'https://github.com/rootscripts/riff/releases/latest';
-      if (title) title.textContent = 'Riff ' + d.version + ' is available';
+      if (title) title.textContent = 'Lumo ' + d.version + ' is available';
       if (bar) { bar.classList.add('hidden'); if (bar.firstElementChild) bar.firstElementChild.style.width = '0'; }
       if (nowB) {
         nowB.disabled = false;
@@ -15505,7 +18557,7 @@ function bindCoverHoldZoom(wrapEl) {
           restoreButton();
         } else {
           restoreButton();
-          showToast('You are using the latest version of Riff!', 'success');
+          showToast('You are using the latest version of Lumo!', 'success');
         }
       } catch (err) {
         restoreButton();
@@ -15555,7 +18607,7 @@ function bindCoverHoldZoom(wrapEl) {
         const wasManual = manualUpdateCheck;
         restoreButton();
         if (wasManual) {
-          showToast('You are using the latest version of Riff!', 'success');
+          showToast('You are using the latest version of Lumo!', 'success');
         }
       });
     }
@@ -15576,7 +18628,7 @@ function bindCoverHoldZoom(wrapEl) {
     }
     if (api && api.onUpdateReady) {
       api.onUpdateReady(() => {
-        if (text) text.textContent = 'Update downloaded. It will be installed when you close Riff.';
+        if (text) text.textContent = 'Update downloaded. It will be installed when you close Lumo.';
         if (nowB) nowB.classList.add('hidden');
         if (laterB) laterB.classList.add('hidden');
       });
@@ -15599,7 +18651,7 @@ function bindCoverHoldZoom(wrapEl) {
       laterB.addEventListener('click', () => {
         if (api && api.updateAction) api.updateAction('later');
         if (modal) closeModal(modal);
-        showToast('The update will be installed when you close Riff', 'info');
+        showToast('The update will be installed when you close Lumo', 'info');
       });
     }
     if (ignoreB) {
@@ -15803,7 +18855,7 @@ function bindCoverHoldZoom(wrapEl) {
   if (btnDiscordRpc) {
     btnDiscordRpc.addEventListener('click', () => {
       state.discordRpcEnabled = !state.discordRpcEnabled;
-      localStorage.setItem('devsize_discord_rpc', JSON.stringify(state.discordRpcEnabled));
+      localStorage.setItem('lumo_discord_rpc', JSON.stringify(state.discordRpcEnabled));
       if (window.electronAPI && window.electronAPI.discordRpcSetEnabled) {
         window.electronAPI.discordRpcSetEnabled(state.discordRpcEnabled);
       }
@@ -15829,12 +18881,12 @@ function bindCoverHoldZoom(wrapEl) {
 
   const btnDiscordArtistStatus = document.getElementById('btn-discord-artist-status');
   if (btnDiscordArtistStatus) {
-    const on = localStorage.getItem('riff_discord_artist_status') !== '0';
+    const on = localStorage.getItem('lumo_discord_artist_status') !== '0';
     btnDiscordArtistStatus.classList.toggle('active', on);
     btnDiscordArtistStatus.addEventListener('click', () => {
       const next = !btnDiscordArtistStatus.classList.contains('active');
       btnDiscordArtistStatus.classList.toggle('active', next);
-      localStorage.setItem('riff_discord_artist_status', next ? '1' : '0');
+      localStorage.setItem('lumo_discord_artist_status', next ? '1' : '0');
       if (state.discordRpcEnabled && state.isPlaying && state.currentTrack) {
         sendDiscordRpcUpdate(state.currentTrack, true);
       }
@@ -15901,7 +18953,7 @@ function bindCoverHoldZoom(wrapEl) {
   if (btnLastFmToggle) {
     btnLastFmToggle.addEventListener('click', () => {
       lastfmState.enabled = !lastfmState.enabled;
-      localStorage.setItem('riff_lastfm_enabled', String(lastfmState.enabled));
+      localStorage.setItem('lumo_lastfm_enabled', String(lastfmState.enabled));
       syncLastFmUI();
     });
   }
@@ -15916,13 +18968,13 @@ function bindCoverHoldZoom(wrapEl) {
       if (customKey && customSecret) {
         lastfmState.apiKey = customKey;
         lastfmState.apiSecret = customSecret;
-        localStorage.setItem('riff_lastfm_apikey', customKey);
-        localStorage.setItem('riff_lastfm_apisecret', customSecret);
+        localStorage.setItem('lumo_lastfm_apikey', customKey);
+        localStorage.setItem('lumo_lastfm_apisecret', customSecret);
       } else {
         lastfmState.apiKey = '';
         lastfmState.apiSecret = '';
-        localStorage.removeItem('riff_lastfm_apikey');
-        localStorage.removeItem('riff_lastfm_apisecret');
+        localStorage.removeItem('lumo_lastfm_apikey');
+        localStorage.removeItem('lumo_lastfm_apisecret');
       }
       if (statusEl) {
         statusEl.textContent = 'Requesting Last.fm authorization...';
@@ -15970,10 +19022,10 @@ function bindCoverHoldZoom(wrapEl) {
               lastfmState.pollTimer = null;
               lastfmState.sessionKey = sData.sessionKey;
               lastfmState.username = sData.username;
-              localStorage.setItem('riff_lastfm_sk', sData.sessionKey);
-              localStorage.setItem('riff_lastfm_user', sData.username);
+              localStorage.setItem('lumo_lastfm_sk', sData.sessionKey);
+              localStorage.setItem('lumo_lastfm_user', sData.username);
               syncLastFmUI();
-              if (typeof showToast === 'function') showToast('Connected to Last.fm as @' + sData.username, 'info');
+              if (typeof showToast === 'function') showToastNow('Connected to Last.fm as @' + sData.username, 'info');
               closeLastFmModal();
             }
           } catch (_) {}
@@ -16009,11 +19061,11 @@ function bindCoverHoldZoom(wrapEl) {
 
       if (customKey) {
         lastfmState.apiKey = customKey;
-        localStorage.setItem('riff_lastfm_apikey', customKey);
+        localStorage.setItem('lumo_lastfm_apikey', customKey);
       }
       if (customSecret) {
         lastfmState.apiSecret = customSecret;
-        localStorage.setItem('riff_lastfm_apisecret', customSecret);
+        localStorage.setItem('lumo_lastfm_apisecret', customSecret);
       }
 
       if (statusEl) {
@@ -16037,15 +19089,15 @@ function bindCoverHoldZoom(wrapEl) {
         if (data.success && data.sessionKey) {
           lastfmState.sessionKey = data.sessionKey;
           lastfmState.username = data.username || username;
-          localStorage.setItem('riff_lastfm_sk', data.sessionKey);
-          localStorage.setItem('riff_lastfm_user', lastfmState.username);
+          localStorage.setItem('lumo_lastfm_sk', data.sessionKey);
+          localStorage.setItem('lumo_lastfm_user', lastfmState.username);
           if (passInp) passInp.value = '';
           if (statusEl) {
             statusEl.textContent = `Connected as @${lastfmState.username}!`;
             statusEl.classList.remove('hidden');
           }
           syncLastFmUI();
-          if (typeof showToast === 'function') showToast(`Connected to Last.fm as @${lastfmState.username}`, 'info');
+          if (typeof showToast === 'function') showToastNow(`Connected to Last.fm as @${lastfmState.username}`, 'info');
         } else {
           if (statusEl) {
             statusEl.textContent = data.error || 'Authentication failed';
@@ -16065,8 +19117,8 @@ function bindCoverHoldZoom(wrapEl) {
     btnLastFmDisconnect.addEventListener('click', () => {
       lastfmState.sessionKey = '';
       lastfmState.username = '';
-      localStorage.removeItem('riff_lastfm_sk');
-      localStorage.removeItem('riff_lastfm_user');
+      localStorage.removeItem('lumo_lastfm_sk');
+      localStorage.removeItem('lumo_lastfm_user');
       if (lastfmState.pollTimer) {
         clearInterval(lastfmState.pollTimer);
         lastfmState.pollTimer = null;
@@ -16077,7 +19129,7 @@ function bindCoverHoldZoom(wrapEl) {
         statusEl.classList.add('hidden');
       }
       syncLastFmUI();
-      if (typeof showToast === 'function') showToast('Disconnected from Last.fm', 'info');
+      if (typeof showToast === 'function') showToastNow('Disconnected from Last.fm', 'info');
     });
   }
 
@@ -16325,7 +19377,7 @@ function bindCoverHoldZoom(wrapEl) {
   let parsedSpotifyExport = { likes: [], playlists: [] };
   let spLoginPollTimer = null;
   let spotifyConnected = false;
-  const spotifyHeaders = { 'X-Riff-Token': window.electronAPI?.serverToken || '' };
+  const spotifyHeaders = { 'X-Lumo-Token': window.electronAPI?.serverToken || '' };
 
   async function checkSpotifyAuthStatus() {
     try {
@@ -16458,14 +19510,14 @@ function bindCoverHoldZoom(wrapEl) {
   }
 
   if (spClientIdInput) {
-    const savedId = localStorage.getItem('riff_spotify_client_id') || '';
+    const savedId = localStorage.getItem('lumo_spotify_client_id') || '';
     spClientIdInput.value = savedId;
     if (btnSpLogin) {
       btnSpLogin.disabled = !/^[a-f0-9]{32}$/i.test(savedId.trim());
     }
     spClientIdInput.addEventListener('input', () => {
       const val = spClientIdInput.value.trim();
-      localStorage.setItem('riff_spotify_client_id', val);
+      localStorage.setItem('lumo_spotify_client_id', val);
       if (btnSpLogin) {
         btnSpLogin.disabled = !/^[a-f0-9]{32}$/i.test(val);
       }
@@ -16637,7 +19689,7 @@ function bindCoverHoldZoom(wrapEl) {
     if (spChkLikes2) { spChkLikes2.checked = true; spChkLikes2.disabled = false; }
     if (spChkPlaylists2) { spChkPlaylists2.checked = true; spChkPlaylists2.disabled = false; }
     if (btnSpPickFiles) btnSpPickFiles.disabled = false;
-    const savedId = localStorage.getItem('riff_spotify_client_id') || '';
+    const savedId = localStorage.getItem('lumo_spotify_client_id') || '';
     if (spClientIdInput) spClientIdInput.value = savedId;
     if (btnSpLogin) btnSpLogin.disabled = !/^[a-f0-9]{32}$/i.test(savedId.trim());
     if (spRedirectUri) spRedirectUri.textContent = `http://127.0.0.1:${state.serverPort || 38472}/api/spotify-callback`;
@@ -16761,7 +19813,7 @@ function bindCoverHoldZoom(wrapEl) {
           }
         }
         if (addedFav) {
-          localStorage.setItem('devsize_favorites', JSON.stringify(state.favorites));
+          localStorage.setItem('lumo_favorites', JSON.stringify(state.favorites));
           updateFavoritesBadge();
           updateFavoriteIcon();
           if (state.currentView === 'favorites') renderFavoritesView();
@@ -17010,7 +20062,7 @@ function bindCoverHoldZoom(wrapEl) {
           const existingIds = new Set(pl.tracks.map(t => t.id));
           const newTracks = foundTracks.filter(t => !existingIds.has(t.id));
           pl.tracks.push(...newTracks.map(stampAddedAt));
-          localStorage.setItem('devsize_playlists', JSON.stringify(state.playlists));
+          localStorage.setItem('lumo_playlists', JSON.stringify(state.playlists));
           renderPlaylistsList();
         }
       }
@@ -17467,7 +20519,7 @@ function bindCoverHoldZoom(wrapEl) {
             }
           }
           if (addedFav) {
-            localStorage.setItem('devsize_favorites', JSON.stringify(state.favorites));
+            localStorage.setItem('lumo_favorites', JSON.stringify(state.favorites));
             updateFavoritesBadge();
             updateFavoriteIcon();
             if (state.currentView === 'favorites') renderFavoritesView();
@@ -17582,7 +20634,7 @@ function bindCoverHoldZoom(wrapEl) {
           const existingIds = new Set(pl.tracks.map(t => t.id));
           const newTracks = foundTracks.filter(t => !existingIds.has(t.id));
           pl.tracks.push(...newTracks.map(stampAddedAt));
-          localStorage.setItem('devsize_playlists', JSON.stringify(state.playlists));
+          localStorage.setItem('lumo_playlists', JSON.stringify(state.playlists));
           renderPlaylistsList();
         }
       }
@@ -17942,7 +20994,7 @@ function bindCoverHoldZoom(wrapEl) {
             const existingIds = new Set(targetPl.tracks.map(t => t.id));
             const newTracks = foundTracks.filter(t => !existingIds.has(t.id));
             targetPl.tracks.push(...newTracks.map(stampAddedAt));
-            localStorage.setItem('devsize_playlists', JSON.stringify(state.playlists));
+            localStorage.setItem('lumo_playlists', JSON.stringify(state.playlists));
             renderPlaylistsList();
             if (state.currentView === 'playlist-detail' && state.currentPlaylistId === targetPlId) {
               openPlaylistDetail(targetPlId);
@@ -18002,7 +21054,7 @@ function bindCoverHoldZoom(wrapEl) {
         const targetPl = state.playlists.find(p => p.id === targetPlId);
         if (targetPl) {
           data.tracks.forEach(t => targetPl.tracks.push(stampAddedAt(t)));
-          localStorage.setItem('devsize_playlists', JSON.stringify(state.playlists));
+          localStorage.setItem('lumo_playlists', JSON.stringify(state.playlists));
           renderPlaylistsList();
           if (state.currentView === 'playlist-detail' && state.currentPlaylistId === targetPlId) {
             openPlaylistDetail(targetPlId);
@@ -18110,7 +21162,7 @@ function bindCoverHoldZoom(wrapEl) {
           if (linkImportProgressLabel) linkImportProgressLabel.textContent = `${importedCount} / ${totalTracks}`;
         }
         if (addedFav) {
-          localStorage.setItem('devsize_favorites', JSON.stringify(state.favorites));
+          localStorage.setItem('lumo_favorites', JSON.stringify(state.favorites));
           updateFavoritesBadge();
           updateFavoriteIcon();
           if (state.currentView === 'favorites') renderFavoritesView();
@@ -18129,7 +21181,7 @@ function bindCoverHoldZoom(wrapEl) {
                 wavy.set(Math.round((importedCount / totalTracks) * 100));
                 if (linkImportProgressLabel) linkImportProgressLabel.textContent = `${importedCount} / ${totalTracks}`;
               }
-              localStorage.setItem('devsize_playlists', JSON.stringify(state.playlists));
+              localStorage.setItem('lumo_playlists', JSON.stringify(state.playlists));
               renderPlaylistsList();
               if (state.currentView === 'playlist-detail' && state.currentPlaylistId === targetPlId) {
                 openPlaylistDetail(targetPlId);
@@ -18194,6 +21246,7 @@ function bindCoverHoldZoom(wrapEl) {
         ? t.duration
         : (t.duration ? Number(t.duration) : (t.durationMs ? Math.round(t.durationMs / 1000) : null)),
       source: t.source || t.platform || (isLocal ? 'local' : 'unknown'),
+      platform: t.platform || t.source || (isLocal ? 'local' : 'unknown'),
       id,
       url,
       cover
@@ -18216,7 +21269,7 @@ function bindCoverHoldZoom(wrapEl) {
     } catch (e) {}
 
     const payload = {
-      app: 'Riff',
+      app: 'Lumo',
       appVersion: appVer,
       exportedAt: new Date().toISOString(),
       playlists: valid.map(pl => ({
@@ -18309,7 +21362,8 @@ function bindCoverHoldZoom(wrapEl) {
           duration: Number(t.duration) || 0,
           url: t.url || '',
           cover: t.cover || t.thumbnail || '',
-          source: t.source || t.platform || 'youtube'
+          source: t.source || t.platform || (String(t.url || '').includes('soundcloud.com') ? 'soundcloud' : 'youtube'),
+          platform: (() => { const p = String(t.platform || t.source || '').toLowerCase(); return p.includes('soundcloud') || String(t.url || '').includes('soundcloud.com') ? 'soundcloud' : (p || 'youtube'); })()
         };
       }).filter(Boolean);
       const cover = item.cover || '';
@@ -18382,7 +21436,7 @@ function bindCoverHoldZoom(wrapEl) {
     btnImportJsonPlaylists.addEventListener('click', triggerJsonPlaylistImport);
   }
 
-  function confirmChain({ title = 'Import Riff account', message = 'Importing an account will replace your existing playlists, favorites, custom styles, and settings. Riff will restart immediately.', confirmLabel = 'Import & Restart', seconds = 3 } = {}) {
+  function confirmChain({ title = 'Import Lumo account', message = 'Importing an account will replace your existing playlists, favorites, custom styles, and settings. Lumo will restart immediately.', confirmLabel = 'Import & Restart', seconds = 3 } = {}) {
     return new Promise((resolve) => {
       let modal = document.getElementById('confirm-chain-modal');
       if (!modal) {
@@ -18452,7 +21506,7 @@ function bindCoverHoldZoom(wrapEl) {
         }
       } catch (_) {}
       const payload = {
-        app: 'Riff',
+        app: 'Lumo',
         version: '1.0',
         exportedAt: Date.now(),
         localStorage: dump
@@ -18472,8 +21526,8 @@ function bindCoverHoldZoom(wrapEl) {
   if (btnImportAccount) {
     btnImportAccount.onclick = async () => {
       const confirmed = await confirmChain({
-        title: 'Import Riff account',
-        message: 'Importing an account will replace your existing playlists, favorites, custom styles, and settings. Riff will restart immediately.',
+        title: 'Import Lumo account',
+        message: 'Importing an account will replace your existing playlists, favorites, custom styles, and settings. Lumo will restart immediately.',
         confirmLabel: 'Import & Restart',
         seconds: 3
       });
@@ -18497,8 +21551,8 @@ function bindCoverHoldZoom(wrapEl) {
             } catch (_) {}
           }
         }
-        if (window.electronAPI.storageSaveSync && window.__RIFF_STORAGE_MAP__) {
-          try { window.electronAPI.storageSaveSync(window.__RIFF_STORAGE_MAP__); } catch (_) {}
+        if (window.electronAPI.storageSaveSync && window.__LUMO_STORAGE_MAP__) {
+          try { window.electronAPI.storageSaveSync(window.__LUMO_STORAGE_MAP__); } catch (_) {}
         }
       }
       showToast('Account imported! Restarting...', 'success');
@@ -18534,7 +21588,7 @@ function bindCoverHoldZoom(wrapEl) {
 
   let trackToDownload = null;
   let downloadBatch = null;
-  let selectedFormat = localStorage.getItem('riff_download_format') || 'mp3';
+  let selectedFormat = localStorage.getItem('lumo_download_format') || 'mp3';
   let selectedQuality = '0';
 
   function updateDownloadBtnLabel() {
@@ -18955,7 +22009,7 @@ function bindCoverHoldZoom(wrapEl) {
     btnCcSave.addEventListener('click', () => {
       if (!trackToDownload) return;
       saveTrackTrim(trackToDownload, trimDraft.start, trimDraft.end, trimDraft.dur);
-      showToast('Track trim saved (' + formatPreciseTime(trimDraft.start) + ' – ' + formatPreciseTime(trimDraft.end) + ')');
+      showToastNow('Track trim saved (' + formatPreciseTime(trimDraft.start) + ' – ' + formatPreciseTime(trimDraft.end) + ')');
       const btnCcReset = document.getElementById('btn-cc-reset');
       if (btnCcReset) btnCcReset.classList.remove('hidden');
       if (isSameTrack(state.currentTrack, trackToDownload) && el.nativeAudio) {
@@ -18974,19 +22028,19 @@ function bindCoverHoldZoom(wrapEl) {
       if (cid) {
         const all = getTrackTrims();
         delete all[cid];
-        try { localStorage.setItem('riff_track_trims', JSON.stringify(all)); } catch (_) {}
+        try { localStorage.setItem('lumo_track_trims', JSON.stringify(all)); } catch (_) {}
       }
       trimDraft.start = 0;
       trimDraft.end = trimDraft.dur;
       updateTrimmerUI();
       btnCcReset.classList.add('hidden');
-      showToast('Track trim removed');
+      showToastNow('Track trim removed');
     });
   }
 
   function setDownloadFormat(fmt) {
     selectedFormat = fmt || 'mp3';
-    localStorage.setItem('riff_download_format', selectedFormat);
+    localStorage.setItem('lumo_download_format', selectedFormat);
     document.querySelectorAll('.format-chip').forEach(c => {
       c.classList.toggle('active', c.dataset.format === selectedFormat);
     });
@@ -19276,6 +22330,11 @@ function bindCoverHoldZoom(wrapEl) {
         const decodeCtx = audioEngine.ctx || new (window.AudioContext || window.webkitAudioContext)();
         const decodedBuffer = await new Promise((resolve, reject) => {
           decodeCtx.decodeAudioData(arrayBuffer.slice(0), resolve, reject);
+        }).catch((cause) => {
+          const error = new Error('This audio format cannot be processed for trimming or effects. Try downloading the original track instead.');
+          error.code = 'ERR_AUDIO_DECODE';
+          error.cause = cause;
+          throw error;
         });
 
         if (downloadAbort?.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
@@ -19303,7 +22362,7 @@ function bindCoverHoldZoom(wrapEl) {
 
         if (downloadAbort?.signal?.aborted) throw new DOMException('Aborted', 'AbortError');
 
-        const encodeUrl = `http://127.0.0.1:${state.serverPort}/api/encode?title=${encodeURIComponent(t.title || 'untitled')}&artist=${encodeURIComponent(t.artist || 'unknown artist')}&format=${selectedFormat}&quality=${selectedQuality}`;
+        const encodeUrl = `http://127.0.0.1:${state.serverPort}/api/encode?title=${encodeURIComponent(t.title || 'untitled')}&artist=${encodeURIComponent(t.artist || 'unknown artist')}&format=${selectedFormat}&quality=${selectedQuality}&id=${encodeURIComponent(t.id || '')}`;
         const resEncode = await fetch(encodeUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'audio/wav' },
@@ -19323,7 +22382,8 @@ function bindCoverHoldZoom(wrapEl) {
         if (el.downloadModal) closeModal(el.downloadModal);
       } catch (err) {
         if (err.name === 'AbortError') return;
-        console.error('Download error:', err);
+        if (err.code === 'ERR_AUDIO_DECODE') console.warn('Download processing skipped: unsupported audio format');
+        else console.error('Download error:', err);
         showToast(`Download failed: ${err.message}`, 'error');
       } finally {
         downloadAbort = null;
@@ -19359,7 +22419,7 @@ function bindCoverHoldZoom(wrapEl) {
   const analysisCache = new Map();
   let myWaveCurrentTracks = [];
   let jumpBackCurrentTracks = [];
-  let homeMode = localStorage.getItem('riff_home_pane') === 'recent' ? 'recent' : 'wave';
+  let homeMode = localStorage.getItem('lumo_home_pane') === 'recent' ? 'recent' : 'wave';
   let isExtendingMyWave = false;
 
   function getCachedTrackAnalysis(trackId) {
@@ -19367,7 +22427,7 @@ function bindCoverHoldZoom(wrapEl) {
     const cleanId = String(trackId).replace(/[^a-zA-Z0-9_-]/g, '_');
     if (analysisCache.has(cleanId)) return analysisCache.get(cleanId);
     try {
-      const stored = localStorage.getItem(`riff_audio_analysis_${cleanId}`);
+      const stored = localStorage.getItem(`lumo_audio_analysis_${cleanId}`);
       if (stored) {
         const parsed = JSON.parse(stored);
         analysisCache.set(cleanId, parsed);
@@ -19382,7 +22442,7 @@ function bindCoverHoldZoom(wrapEl) {
     const cleanId = String(trackId).replace(/[^a-zA-Z0-9_-]/g, '_');
     analysisCache.set(cleanId, analysis);
     try {
-      localStorage.setItem(`riff_audio_analysis_${cleanId}`, JSON.stringify(analysis));
+      localStorage.setItem(`lumo_audio_analysis_${cleanId}`, JSON.stringify(analysis));
       fetch(`http://127.0.0.1:${state.serverPort}/api/track-analysis`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -19405,7 +22465,7 @@ function bindCoverHoldZoom(wrapEl) {
     return `${a}::${t}`;
   }
 
-  const WAVE_SKIPS_KEY = 'riff_wave_skips';
+  const WAVE_SKIPS_KEY = 'lumo_wave_skips';
 
   function normalizeArtistName(name) {
     return String(name || '')
@@ -20065,7 +23125,7 @@ function bindCoverHoldZoom(wrapEl) {
           artistEl.textContent = pText;
         } else {
           titleEl.textContent = item.title || 'Untitled';
-          artistEl.textContent = item.artist || 'Unknown';
+          renderClickableArtists(artistEl, item.artist || 'Unknown artist');
         }
         updateTextFade(titleEl);
         updateTextFade(artistEl);
@@ -20299,7 +23359,7 @@ function bindCoverHoldZoom(wrapEl) {
     if (newMode === homeMode) return;
 
     homeMode = newMode;
-    localStorage.setItem('riff_home_pane', newMode);
+    localStorage.setItem('lumo_home_pane', newMode);
     updateHomeDots();
 
     const isPerf = document.body.classList.contains('perf') || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -20354,7 +23414,7 @@ function bindCoverHoldZoom(wrapEl) {
 
     if (!avail.includes(homeMode)) {
       homeMode = avail[0];
-      localStorage.setItem('riff_home_pane', homeMode);
+      localStorage.setItem('lumo_home_pane', homeMode);
     }
 
     updateHomeDots();
@@ -20395,13 +23455,22 @@ function bindCoverHoldZoom(wrapEl) {
       if (!isDiscoverActive() || isFormInputFocused()) return;
       if (el.searchResultsContainer && !el.searchResultsContainer.classList.contains('hidden')) return;
       if (e.target.closest('#search-results-container')) return;
+      const isOverHorizontalRow = !!e.target.closest('.discover-carousel, #home-vibe-grid, #home-vibe-track, .discover-hero, .hero-carousel, .home-carousel-track, .sp-row, .artist-grid-scroll, .sp-cards-row');
+      if (!isOverHorizontalRow) return;
       const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
       if (Math.abs(delta) < 8) return;
       if (isCarouselWheelLocked) return;
       e.preventDefault();
       isCarouselWheelLocked = true;
       setTimeout(() => { isCarouselWheelLocked = false; }, 85);
-      stepCarouselFocus(delta > 0 ? 1 : -1);
+      const horizontalRowEl = e.target.closest('.discover-carousel, #home-vibe-grid, #home-vibe-track, .discover-hero, .hero-carousel, .home-carousel-track, .sp-row, .artist-grid-scroll, .sp-cards-row');
+      if (horizontalRowEl && (horizontalRowEl.id === 'home-vibe-grid' || horizontalRowEl.id === 'home-vibe-track' || horizontalRowEl.classList.contains('hero-carousel') || horizontalRowEl.classList.contains('discover-hero'))) {
+        stepCarouselFocus(delta > 0 ? 1 : -1);
+      } else if (horizontalRowEl) {
+        horizontalRowEl.scrollLeft += (delta > 0 ? 120 : -120);
+      } else {
+        stepCarouselFocus(delta > 0 ? 1 : -1);
+      }
     }, { passive: false });
 
     let touchStartY = 0;
@@ -20453,7 +23522,7 @@ function bindCoverHoldZoom(wrapEl) {
   }
 
   async function fetchPersonalVibe(forceRefresh = false) {
-    const cachedWave = safeJson('riff_my_wave_cache', null);
+    const cachedWave = safeJson('lumo_my_wave_cache', null);
     if (!forceRefresh && cachedWave && Array.isArray(cachedWave.tracks) && cachedWave.tracks.length > 0) {
       state.vibeTracks = cachedWave.tracks;
       renderVibeCards(state.vibeTracks);
@@ -20541,7 +23610,7 @@ function bindCoverHoldZoom(wrapEl) {
           }
           if (uniqueTracks.length > 0) {
             state.vibeTracks = uniqueTracks;
-            try { localStorage.setItem('riff_my_wave_cache', JSON.stringify({ ts: Date.now(), tracks: state.vibeTracks })); } catch (_) {}
+            try { localStorage.setItem('lumo_my_wave_cache', JSON.stringify({ ts: Date.now(), tracks: state.vibeTracks })); } catch (_) {}
           }
         }
       } catch (_) {}
@@ -20591,7 +23660,7 @@ function bindCoverHoldZoom(wrapEl) {
 
       myWaveCurrentTracks = uniqueTracks;
       state.vibeTracks = uniqueTracks;
-      try { localStorage.setItem('riff_my_wave_cache', JSON.stringify({ ts: Date.now(), tracks: state.vibeTracks })); } catch (_) {}
+      try { localStorage.setItem('lumo_my_wave_cache', JSON.stringify({ ts: Date.now(), tracks: state.vibeTracks })); } catch (_) {}
       currentWaveFocusedIndex = 0;
       if (homeMode === 'wave') {
         if (vibeGrid) {
@@ -20699,7 +23768,7 @@ function bindCoverHoldZoom(wrapEl) {
       if (recentTracks.length >= 5) break;
     }
 
-    recentTracks.forEach(track => {
+    recentTracks.forEach((track, idx) => {
       const tile = document.createElement('div');
       tile.className = 'sp-tile';
       const thumb = (typeof getTrackThumbUrl === 'function' ? getTrackThumbUrl(track) : '') || track.thumbnail || track.cover || '';
@@ -20715,13 +23784,24 @@ function bindCoverHoldZoom(wrapEl) {
       title.textContent = track.title || 'Untitled';
       const sub = document.createElement('div');
       sub.className = 'sp-tile-sub sp-fade';
-      sub.textContent = track.artist || track.uploader || 'Unknown artist';
+      const artistName = track.artist || track.uploader || 'Unknown artist';
+      sub.textContent = artistName;
+      if (artistName && !/^unknown artist$/i.test(artistName)) {
+        sub.style.cursor = 'pointer';
+        sub.title = `View artist: ${artistName}`;
+        sub.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (typeof openArtistProfile === 'function') {
+            openArtistProfile(artistName);
+          }
+        });
+      }
       text.appendChild(title);
       text.appendChild(sub);
       tile.appendChild(img);
       tile.appendChild(text);
       tile.addEventListener('click', () => {
-        playTrack(track);
+        playTrack(track, [...recentTracks], idx);
       });
       container.appendChild(tile);
     });
@@ -20822,8 +23902,19 @@ function bindCoverHoldZoom(wrapEl) {
       badge.textContent = 'E';
       subEl.appendChild(badge);
     }
-    const subText = document.createTextNode(sub || '');
-    subEl.appendChild(subText);
+    const subSpan = document.createElement('span');
+    subSpan.className = 'sp-card-artist-link';
+    subSpan.textContent = sub || '';
+    if (sub && !/^unknown artist$/i.test(sub)) {
+      subSpan.title = `View artist: ${sub}`;
+      subSpan.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (typeof openArtistProfile === 'function') {
+          openArtistProfile(sub);
+        }
+      });
+    }
+    subEl.appendChild(subSpan);
 
     card.appendChild(coverWrap);
     card.appendChild(titleEl);
@@ -20846,7 +23937,7 @@ function bindCoverHoldZoom(wrapEl) {
     sec.hidden = false;
 
     let hasCachedTracks = false;
-    const cached = safeJson('riff_trending_cache', null);
+    const cached = safeJson('lumo_trending_cache', null);
     if (cached && Array.isArray(cached.tracks) && cached.tracks.length > 0) {
       renderTrendingCards(row, cached.tracks);
       hasCachedTracks = true;
@@ -20867,7 +23958,7 @@ function bindCoverHoldZoom(wrapEl) {
       const data = await res.json();
       if (data && data.success && Array.isArray(data.tracks) && data.tracks.length > 0) {
         try {
-          localStorage.setItem('riff_trending_cache', JSON.stringify({ ts: Date.now(), tracks: data.tracks }));
+          localStorage.setItem('lumo_trending_cache', JSON.stringify({ ts: Date.now(), tracks: data.tracks }));
         } catch (_) {}
         renderTrendingCards(row, data.tracks);
         sec.hidden = false;
@@ -20900,7 +23991,7 @@ function bindCoverHoldZoom(wrapEl) {
     requestAnimationFrame(() => updateRowFade(row));
   }
 
-  const MIX_KEY = 'riff_daily_mixes';
+  const MIX_KEY = 'lumo_daily_mixes';
 
   function getLocalDateString() {
     const d = new Date();
@@ -20978,7 +24069,7 @@ function bindCoverHoldZoom(wrapEl) {
 
   async function generateDailyMixes(force = false) {
     if (!getAdv('my_wave', true)) return null;
-    const sp = (localStorage.getItem('riff_home_layout') || 'spotify') === 'spotify';
+    const sp = (localStorage.getItem('lumo_home_layout') || 'spotify') === 'spotify';
     if (!sp) return null;
 
     const today = getLocalDateString();
@@ -21257,26 +24348,27 @@ function bindCoverHoldZoom(wrapEl) {
   }
 
   function applyHomeLayout() {
-    const sp = (localStorage.getItem('riff_home_layout') || 'spotify') === 'spotify';
+    const sp = (localStorage.getItem('lumo_home_layout') || 'spotify') === 'spotify';
     document.body.classList.toggle('home-spotify', sp);
     const btnSp = document.getElementById('home-layout-spotify');
     const btnRiff = document.getElementById('home-layout-riff');
     if (btnSp) btnSp.classList.toggle('active', sp);
     if (btnRiff) btnRiff.classList.toggle('active', !sp);
     if (sp) renderSpotifyHome();
+    else renderDynamicDiscoverSections();
   }
 
   const btnHomeSpotify = document.getElementById('home-layout-spotify');
   const btnHomeRiff = document.getElementById('home-layout-riff');
   if (btnHomeSpotify) {
     btnHomeSpotify.addEventListener('click', () => {
-      localStorage.setItem('riff_home_layout', 'spotify');
+      localStorage.setItem('lumo_home_layout', 'spotify');
       applyHomeLayout();
     });
   }
   if (btnHomeRiff) {
     btnHomeRiff.addEventListener('click', () => {
-      localStorage.setItem('riff_home_layout', 'riff');
+      localStorage.setItem('lumo_home_layout', 'riff');
       applyHomeLayout();
     });
   }
@@ -21573,7 +24665,7 @@ function bindCoverHoldZoom(wrapEl) {
       }
       const move = window.confirm(
         'Move your existing music to the new folder?\n\n' +
-        'OK: move all downloaded and imported files, then restart Riff.\n' +
+        'OK: move all downloaded and imported files, then restart Lumo.\n' +
         'Cancel: switch to the new folder without moving (files stay in the old one).'
       );
       btnChangeMusicFolder.disabled = true;
@@ -21593,7 +24685,7 @@ function bindCoverHoldZoom(wrapEl) {
         return;
       }
       btnChangeMusicFolder.textContent = 'Restarting...';
-      showToast('Restarting Riff...');
+      showToast('Restarting Lumo...');
       setTimeout(() => { if (window.electronAPI.restartApp) window.electronAPI.restartApp(); }, 400);
     });
   }
@@ -21924,7 +25016,7 @@ function bindCoverHoldZoom(wrapEl) {
       if (data.progress && data.progress.status === 'downloading') {
         pollToolsStatus();
       } else if (promptUser && (!data.ytDlp || !data.ffmpeg)) {
-        if (!sessionStorage.getItem('riff_tools_prompt_dismissed')) {
+        if (!sessionStorage.getItem('lumo_tools_prompt_dismissed')) {
           const modal = document.getElementById('tools-install-modal');
           if (modal) openModal(modal);
         }
@@ -21959,14 +25051,14 @@ function bindCoverHoldZoom(wrapEl) {
 
   if (btnDismissToolsModal && toolsModal) {
     btnDismissToolsModal.addEventListener('click', () => {
-      sessionStorage.setItem('riff_tools_prompt_dismissed', '1');
+      sessionStorage.setItem('lumo_tools_prompt_dismissed', '1');
       closeModal(toolsModal);
     });
   }
 
   if (btnCloseToolsModal && toolsModal) {
     btnCloseToolsModal.addEventListener('click', () => {
-      sessionStorage.setItem('riff_tools_prompt_dismissed', '1');
+      sessionStorage.setItem('lumo_tools_prompt_dismissed', '1');
       closeModal(toolsModal);
     });
   }
@@ -22073,7 +25165,7 @@ function bindCoverHoldZoom(wrapEl) {
     const bannerVid = document.getElementById('track-art-banner-vid');
     const bannerPh = document.getElementById('track-art-banner-placeholder');
     const bannerStatus = document.getElementById('track-art-banner-status');
-    const activeBanner = art.banner || localStorage.getItem('riff_banner_media') || activeCover;
+    const activeBanner = art.banner || localStorage.getItem('lumo_banner_media') || activeCover;
     const isVideo = activeBanner && /\.(mp4|webm)($|\?)/i.test(activeBanner);
 
     if (activeBanner) {
@@ -22096,7 +25188,7 @@ function bindCoverHoldZoom(wrapEl) {
       if (bannerVid) bannerVid.style.display = 'none';
       if (bannerPh) bannerPh.style.display = 'block';
     }
-    if (bannerStatus) bannerStatus.textContent = art.banner ? 'Custom banner' : (localStorage.getItem('riff_banner_media') ? 'Global banner' : 'Default art');
+    if (bannerStatus) bannerStatus.textContent = art.banner ? 'Custom banner' : (localStorage.getItem('lumo_banner_media') ? 'Global banner' : 'Default art');
 
     const btnCustomFx = document.getElementById('btn-track-banner-custom-fx');
     const fxControls = document.getElementById('track-banner-fx-controls');
@@ -22322,7 +25414,7 @@ function bindCoverHoldZoom(wrapEl) {
   updateLyricsTranslationUI();
   loadCustomThemes();
   applyCustomStyles();
-  const initCat = localStorage.getItem('riff_settings_cat');
+  const initCat = localStorage.getItem('lumo_settings_cat');
   showSettingsCategory((initCat === 'overview' || !initCat) ? 'home' : initCat);
   refreshStacks();
   requestAnimationFrame(() => requestAnimationFrame(refreshStacks));
@@ -22360,5 +25452,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 });
+
+
+
 
 

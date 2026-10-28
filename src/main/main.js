@@ -6,7 +6,16 @@ const { pathToFileURL } = require('url');
 const { spawn } = require('child_process');
 const crypto = require('crypto');
 const zlib = require('zlib');
-const RFACC_KEY = crypto.createHash('sha256').update('riff-account-key-v1').digest();
+const RFACC_KEY = crypto.createHash('sha256').update('riff-account-key-v1').digest(); // Keep stable so older encrypted account exports remain readable.
+
+// Branding icon: multi-size .ico on Windows (taskbar / window / packaged exe),
+// PNG everywhere else.
+const APP_ICON_PNG = path.join(__dirname, '../../assets', '01-default.png');
+const APP_ICON_ICO = path.join(__dirname, '../../assets', '01-default.ico');
+const APP_ICON = process.platform === 'win32' ? APP_ICON_ICO : APP_ICON_PNG;
+
+// Use the branded name in notifications, dialogs and the process description.
+try { app.setName('Lumo'); } catch (_) {}
 
 function encryptAccount(dataObj) {
   const jsonStr = typeof dataObj === 'string' ? dataObj : JSON.stringify(dataObj);
@@ -35,15 +44,20 @@ const { LIBRARY_DIR, DATA_DIR, resolveBinary, tutorialDone, markTutorialDone, re
 const { getLauncherInfo, installLauncher } = require('./launcher');
 const { getSystemAudioOutputInfo } = require('../shared/audio-output');
 const { log, tail, LOG_DIR } = require('../shared/logger');
-const logger = { log, tail, LOG_DIR, error: (msg, err) => log('ERROR', `${msg}: ${err && err.message ? err.message : err}`) };
+const logger = {
+  log,
+  tail,
+  LOG_DIR,
+  error: (msg, err, stack) => log('ERROR', `${msg}: ${err && err.message ? err.message : err}`, stack || (err && err.stack))
+};
 
 process.on('uncaughtException', (err) => {
-  try { logger.error('Uncaught exception in main', err); } catch (_) {}
+  try { logger.error('Uncaught exception in main', err.message || err, err.stack); } catch (_) {}
 });
 process.on('unhandledRejection', (reason) => {
   try {
     const err = reason instanceof Error ? reason : new Error(String(reason));
-    logger.error('Unhandled rejection in main', err);
+    logger.error('Unhandled rejection in main', err.message || err, err.stack);
   } catch (_) {}
 });
 
@@ -53,7 +67,7 @@ if (process.platform === 'linux') {
   app.commandLine.appendSwitch('ozone-platform-hint', 'auto');
   app.commandLine.appendSwitch('disable-features', 'Vulkan,AudioServiceOutOfProcess');
 
-  if (process.env.RIFF_SKIP_GPU_BUFFER_FLAGS !== '1') {
+  if ((process.env.LUMO_SKIP_GPU_BUFFER_FLAGS || process.env.RIFF_SKIP_GPU_BUFFER_FLAGS) !== '1') {
     app.commandLine.appendSwitch('disable-gpu-memory-buffer-video-frames');
     app.commandLine.appendSwitch('disable-gpu-memory-buffer-compositor-resources');
   }
@@ -80,14 +94,14 @@ app.commandLine.appendSwitch('disable-sync');
 app.commandLine.appendSwitch('disable-speech-api');
 app.commandLine.appendSwitch('js-flags', '--expose-gc');
 
-const extraFlags = (process.env.RIFF_FLAGS || '').split(';').map((s) => s.trim()).filter(Boolean);
+const extraFlags = (process.env.LUMO_FLAGS || process.env.RIFF_FLAGS || '').split(';').map((s) => s.trim()).filter(Boolean);
 for (const flag of extraFlags) {
   const eq = flag.indexOf('=');
   if (eq > 0) app.commandLine.appendSwitch(flag.slice(0, eq), flag.slice(eq + 1));
   else app.commandLine.appendSwitch(flag);
 }
 
-if (process.env.RIFF_DEBUG === '1') {
+if ((process.env.LUMO_DEBUG || process.env.RIFF_DEBUG) === '1') {
   app.whenReady().then(async () => {
     console.log('[gpu] features', JSON.stringify(app.getGPUFeatureStatus()));
     try {
@@ -119,12 +133,32 @@ function runGUI() {
   if (!gotLock && allowMulti) app.setPath('userData', `${app.getPath('userData')}-instance-${process.pid}`);
   app.on('second-instance', () => {
     if (allowMulti) return;
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
+    showAndFocusWindow();
   });
+
+  // Bring the window to the foreground reliably. On Windows a plain
+  // show()/focus() can still leave it behind other windows, so briefly force
+  // it on top and then restore the normal (or mini-player) state.
+  function showAndFocusWindow() {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    try {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      if (!mainWindow.isVisible()) mainWindow.show();
+      if (typeof mainWindow.moveTop === 'function') mainWindow.moveTop();
+      mainWindow.focus();
+      try { app.focus({ steal: true }); } catch (_) {}
+    } catch (_) {}
+    if (process.platform === 'win32') {
+      try { mainWindow.setAlwaysOnTop(true, 'screen-saver'); } catch (_) {}
+      setTimeout(() => {
+        if (!mainWindow || mainWindow.isDestroyed()) return;
+        try { mainWindow.setAlwaysOnTop(!!isMiniWindow); } catch (_) {}
+        try { if (typeof mainWindow.moveTop === 'function') mainWindow.moveTop(); } catch (_) {}
+        try { mainWindow.focus(); } catch (_) {}
+        try { app.focus({ steal: true }); } catch (_) {}
+      }, 250);
+    }
+  }
   let serverPort = PORT;
   let tray = null;
   let isQuitting = false;
@@ -157,7 +191,7 @@ function runGUI() {
         }
       }
     } catch (e) {
-      console.warn('[riff] storage.json read warning:', e.message);
+      console.warn('[Lumo] storage.json read warning:', e.message);
     }
     return null;
   }
@@ -299,7 +333,7 @@ function runGUI() {
     const primaryDisplay = screen.getPrimaryDisplay();
     const scaleFactor = primaryDisplay.scaleFactor;
 
-    app.setAppUserModelId('io.github.rootscripts.riff');
+    app.setAppUserModelId('com.lumo.player');
     mainWindow = new BrowserWindow({
       x: initialBounds.x,
       y: initialBounds.y,
@@ -308,15 +342,15 @@ function runGUI() {
       minWidth: 800,
       minHeight: 540,
                                    backgroundColor: firstRun ? '#8d5ef2' : '#000000',
-                                   title: 'Riff',
-                                   icon: path.join(__dirname, '../../assets', 'icon.png'),
+                                   title: 'Lumo',
+                                   icon: APP_ICON,
                                    frame: false,
                                    titleBarStyle: 'hidden',
                                    show: false,
                                    useContentSize: true,
                                    webPreferences: {
                                      preload: path.join(__dirname, 'preload.js'),
-                                   additionalArguments: [`--riff-token=${getServerToken()}`],
+                                   additionalArguments: [`--lumo-token=${getServerToken()}`],
                                    nodeIntegration: false,
                                    contextIsolation: true,
                                    webSecurity: false,
@@ -324,6 +358,8 @@ function runGUI() {
                                    spellcheck: false
                                    }
     });
+
+    try { mainWindow.setIcon(APP_ICON); } catch (_) {}
 
     if (savedState?.isMaximized) {
       mainWindow.maximize();
@@ -354,6 +390,51 @@ function runGUI() {
       return { action: 'deny' };
     });
 
+    mainWindow.webContents.on('console-message', (event) => {
+      const lvl = event ? event.level : undefined;
+      const msg = event ? event.message : undefined;
+      const src = event ? event.sourceId : undefined;
+      const ln = event ? (event.lineNumber !== undefined ? event.lineNumber : event.line) : undefined;
+      if (/ResizeObserver loop completed with undelivered notifications/i.test(String(msg || ''))) return;
+      if (lvl === 'error' || lvl >= 2) {
+        logger.error('Renderer console error', `${msg} (${src}:${ln})`);
+      }
+    });
+
+    if ((process.env.LUMO_SMOKE_TEST || process.env.RIFF_SMOKE_TEST) === '1') {
+      setTimeout(async () => {
+        try {
+          const domCheck = await mainWindow.webContents.executeJavaScript(`(() => {
+            const splash = document.getElementById('splash');
+            const mainContent = document.getElementById('main-content');
+            const titlebar = document.getElementById('titlebar');
+            const playbar = document.getElementById('playbar');
+            const navDiscover = document.getElementById('nav-discover');
+            const viewDiscover = document.getElementById('view-discover');
+            return {
+              splashExists: !!splash,
+              splashOpacity: splash ? window.getComputedStyle(splash).opacity : null,
+              mainDisplay: mainContent ? window.getComputedStyle(mainContent).display : null,
+              titlebarExists: !!titlebar,
+              playbarExists: !!playbar,
+              navDiscoverActive: navDiscover ? navDiscover.classList.contains('active') : false,
+              viewDiscoverActive: viewDiscover ? viewDiscover.classList.contains('active') : false,
+              bodyBg: window.getComputedStyle(document.body).backgroundColor,
+              bodyColor: window.getComputedStyle(document.body).color
+            };
+          })()`);
+          console.log('[RIFF_SMOKE_TEST_RESULT]', JSON.stringify(domCheck));
+          if ((process.env.LUMO_SCREENSHOT_PATH || process.env.RIFF_SCREENSHOT_PATH)) {
+            const image = await mainWindow.webContents.capturePage();
+            fs.writeFileSync((process.env.LUMO_SCREENSHOT_PATH || process.env.RIFF_SCREENSHOT_PATH), image.toPNG());
+          }
+        } catch (e) {
+          console.error('[RIFF_SMOKE_TEST_ERROR]', e);
+        }
+        app.exit(0);
+      }, 3500);
+    }
+
     mainWindow.on('minimize', () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('window-visibility', false);
@@ -368,12 +449,15 @@ function runGUI() {
     mainWindow.on('restore', () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('window-visibility', true);
+        showAndFocusWindow();
       }
     });
 
     mainWindow.on('hide', () => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('window-visibility', false);
+        try { mainWindow.webContents.setBackgroundThrottling(true); } catch (_) {}
+        if (global.gc) global.gc();
       }
     });
 
@@ -446,7 +530,7 @@ function runGUI() {
     });
 
     ipcMain.handle('get-diagnostics', async () => {
-      const lines = [`Riff ${app.getVersion()}`, `OS ${process.platform} ${process.arch} ${os.release()}`, `Electron ${process.versions.electron} Chromium ${process.versions.chrome} Node ${process.versions.node}`, `Locale ${app.getLocale()}`, `Data ${DATA_DIR}`];
+      const lines = [`Lumo ${app.getVersion()}`, `OS ${process.platform} ${process.arch} ${os.release()}`, `Electron ${process.versions.electron} Chromium ${process.versions.chrome} Node ${process.versions.node}`, `Locale ${app.getLocale()}`, `Data ${DATA_DIR}`];
       for (const name of ['yt-dlp', 'ffmpeg']) {
         const bin = resolveBinary(name);
         lines.push(`${name}: ${bin || 'NOT FOUND'}`);
@@ -690,7 +774,7 @@ function runGUI() {
       let mediaKeysWanted = true;
       let mediaKeysActive = false;
       const sendMedia = (cmd) => {
-        if (process.env.RIFF_DEBUG === '1') console.log('[media] globalShortcut', cmd);
+        if ((process.env.LUMO_DEBUG || process.env.RIFF_DEBUG) === '1') console.log('[media] globalShortcut', cmd);
         if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('media-command', cmd);
       };
       function unregisterMediaKeys() {
@@ -787,9 +871,9 @@ function runGUI() {
         try {
           const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
           const r = await dialog.showSaveDialog(win, {
-            title: 'Export Riff account',
-            defaultPath: 'riff-account.rfacc',
-            filters: [{ name: 'Riff Account (.rfacc)', extensions: ['rfacc'] }]
+            title: 'Export Lumo account',
+            defaultPath: 'lumo-account.rfacc',
+            filters: [{ name: 'Lumo Account (.rfacc)', extensions: ['rfacc'] }]
           });
           if (r.canceled || !r.filePath) return { canceled: true };
           const buffer = encryptAccount(payload || {});
@@ -804,9 +888,9 @@ function runGUI() {
         try {
           const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
           const r = await dialog.showOpenDialog(win, {
-            title: 'Import Riff account',
+            title: 'Import Lumo account',
             properties: ['openFile'],
-            filters: [{ name: 'Riff Account (.rfacc)', extensions: ['rfacc'] }]
+            filters: [{ name: 'Lumo Account (.rfacc)', extensions: ['rfacc'] }]
           });
           if (r.canceled || !r.filePaths || !r.filePaths.length) return { canceled: true };
           const buffer = await fs.promises.readFile(r.filePaths[0]);
@@ -835,7 +919,7 @@ function runGUI() {
 
       ipcMain.handle('google-auth-status', async () => {
         try {
-          const s = session.fromPartition('persist:riff-google');
+          const s = session.fromPartition('persist:lumo-google');
           const cookies = await s.cookies.get({ name: 'SAPISID' });
           const loggedIn = Array.isArray(cookies) && cookies.some(c => c && c.value);
           return { loggedIn };
@@ -846,7 +930,7 @@ function runGUI() {
 
       ipcMain.handle('google-logout', async () => {
         try {
-          const s = session.fromPartition('persist:riff-google');
+          const s = session.fromPartition('persist:lumo-google');
           await s.clearStorageData();
           return { success: true };
         } catch (e) {
@@ -856,7 +940,7 @@ function runGUI() {
 
       ipcMain.handle('google-login', async (event) => {
         const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;
-        const s = session.fromPartition('persist:riff-google');
+        const s = session.fromPartition('persist:lumo-google');
         const chromeUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
         try { s.setUserAgent(chromeUA); } catch (e) {}
 
@@ -869,6 +953,7 @@ function runGUI() {
             parent: win || undefined,
             modal: true,
             title: 'Google Login',
+            icon: APP_ICON,
             webPreferences: {
               session: s,
               contextIsolation: true,
@@ -922,7 +1007,7 @@ function runGUI() {
         const doLikes = !opts || opts.doLikes !== false;
         const doPlaylists = !opts || opts.doPlaylists !== false;
 
-        const s = session.fromPartition('persist:riff-google');
+        const s = session.fromPartition('persist:lumo-google');
         const cookies = await s.cookies.get({ name: 'SAPISID' });
         const sapisidCookie = Array.isArray(cookies) ? cookies.find(c => c && c.value) : null;
         if (!sapisidCookie) {
@@ -1240,18 +1325,18 @@ function runGUI() {
 
       function setupTray() {
         try {
-          const iconPath = path.join(__dirname, '../../assets', 'icon.png');
+          const iconPath = APP_ICON;
           let trayIcon = nativeImage.createFromPath(iconPath);
           trayIcon = trayIcon.resize({ width: 22, height: 22 });
           tray = new Tray(trayIcon);
-          tray.setToolTip('Riff');
+          tray.setToolTip('Lumo');
           const contextMenu = Menu.buildFromTemplate([
             {
               label: 'Show/Hide',
               click: () => {
                 if (!mainWindow || mainWindow.isDestroyed()) return;
-                if (mainWindow.isVisible()) mainWindow.hide();
-                else { mainWindow.show(); mainWindow.focus(); }
+                if (mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused()) mainWindow.hide();
+                else showAndFocusWindow();
               }
             },
             {
@@ -1274,8 +1359,8 @@ function runGUI() {
           tray.setContextMenu(contextMenu);
           tray.on('click', () => {
             if (!mainWindow || mainWindow.isDestroyed()) return;
-            if (mainWindow.isVisible()) mainWindow.hide();
-            else { mainWindow.show(); mainWindow.focus(); }
+            if (mainWindow.isVisible() && !mainWindow.isMinimized() && mainWindow.isFocused()) mainWindow.hide();
+            else showAndFocusWindow();
           });
         } catch (err) {
           console.warn('Tray creation failed:', err);
@@ -1290,7 +1375,7 @@ function runGUI() {
       app.whenReady().then(() => {
         if (process.platform === 'darwin' && app.dock) {
           try {
-            const dockIcon = nativeImage.createFromPath(path.join(__dirname, '../../assets', 'icon.png'));
+            const dockIcon = nativeImage.createFromPath(APP_ICON_PNG);
             if (!dockIcon.isEmpty()) app.dock.setIcon(dockIcon);
           } catch (_) {}
         }
@@ -1299,6 +1384,7 @@ function runGUI() {
         if (tutorialDone()) require('./updater').initUpdater(() => mainWindow);
         app.on('activate', () => {
           if (BrowserWindow.getAllWindows().length === 0) createWindow();
+          else showAndFocusWindow();
         });
       });
 
@@ -1307,3 +1393,5 @@ function runGUI() {
         if (process.platform !== 'darwin') app.quit();
       });
 }
+
+

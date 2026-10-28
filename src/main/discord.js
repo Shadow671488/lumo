@@ -1,7 +1,24 @@
 
+const net = require('net');
 const RPC = require('discord-rpc');
 
-const CLIENT_ID = '1520100510877749358';
+// Ensure Windows named pipes map correctly across Node libuv versions
+if (process.platform === 'win32') {
+  const origCreateConnection = net.createConnection;
+  net.createConnection = function(...args) {
+    if (typeof args[0] === 'string' && args[0].startsWith('\\\\?\\pipe\\')) {
+      args[0] = args[0].replace('\\\\?\\pipe\\', '\\\\.\\pipe\\');
+    }
+    return origCreateConnection.apply(this, args);
+  };
+}
+
+// Discord Rich Presence shows the NAME of the Discord application this ID
+// belongs to. The ID below belongs to the original Riff app, so it shows
+// "Riff". Create your own application at https://discord.com/developers/applications
+// (name it "Lumo"), copy its Application ID, and either paste it here or set
+// the LUMO_DISCORD_CLIENT_ID environment variable.
+const CLIENT_ID = process.env.LUMO_DISCORD_CLIENT_ID || '1565067909259202570';
 const RECONNECT_DELAY_MS = 15000;
 
 let rpcClient = null;
@@ -14,7 +31,14 @@ let isDestroying = false;
 function initRPC() {
   if (rpcClient || isDestroying) return;
 
-  rpcClient = new RPC.Client({ transport: 'ipc' });
+  try {
+    rpcClient = new RPC.Client({ transport: 'ipc' });
+  } catch (e) {
+    console.warn('[Discord RPC] Failed to create RPC client:', e.message || e);
+    rpcClient = null;
+    scheduleReconnect();
+    return;
+  }
 
   rpcClient.on('ready', () => {
     isConnected = true;
@@ -26,6 +50,13 @@ function initRPC() {
 
   rpcClient.on('disconnected', () => {
     console.log('[Discord RPC] Disconnected');
+    isConnected = false;
+    rpcClient = null;
+    scheduleReconnect();
+  });
+
+  rpcClient.on('error', (err) => {
+    console.warn('[Discord RPC] Socket error:', err.message || err);
     isConnected = false;
     rpcClient = null;
     scheduleReconnect();
@@ -54,32 +85,58 @@ function _setActivity(trackInfo) {
   const now = Math.floor(Date.now() / 1000);
   const startEpoch = trackInfo.startTimestamp || now;
   const showArtistStatus = trackInfo.artistInStatus !== false;
-  const cleanTitle = String(trackInfo.title || 'Unknown Track').substring(0, 128).padEnd(2, ' ');
-  const cleanArtist = String(trackInfo.artist || 'Unknown Artist').substring(0, 128).padEnd(2, ' ');
-  const baseActivity = {
-    type: 2,
-    details: cleanTitle,
-    state: showArtistStatus ? cleanArtist : (`by ${trackInfo.artist || 'Unknown Artist'}`).substring(0, 128).padEnd(2, ' '),
-    timestamps: { start: startEpoch },
-    assets: { large_image: trackInfo.thumbnail || undefined },
+  const cleanTitle = String(trackInfo.title || 'Unknown Track').trim().substring(0, 128);
+  const cleanArtist = String(trackInfo.artist || 'Unknown Artist').trim().substring(0, 128);
+
+  const activity = {
+    details: cleanTitle.length >= 2 ? cleanTitle : cleanTitle + ' ',
+    state: showArtistStatus ? (cleanArtist.length >= 2 ? cleanArtist : cleanArtist + ' ') : (`by ${cleanArtist}`).substring(0, 128),
+    startTimestamp: startEpoch * 1000,
     instance: false,
   };
-  if (trackInfo.duration && trackInfo.duration > 0) {
-    baseActivity.timestamps.end = startEpoch + Math.floor(trackInfo.duration);
+
+  // Only the start timestamp is sent on purpose. With an end timestamp Discord
+  // renders the remaining/total time (e.g. "1:25") right after playback starts,
+  // which looks like a wrong clock. A start-only activity shows a clean elapsed
+  // timer that begins at 0:00 and counts up.
+
+  if (trackInfo.thumbnail && typeof trackInfo.thumbnail === 'string' && trackInfo.thumbnail.startsWith('http')) {
+    activity.largeImageKey = trackInfo.thumbnail;
+    activity.largeImageText = cleanTitle;
   }
-  if (trackInfo.url && typeof trackInfo.url === 'string' && trackInfo.url.startsWith('https://') && trackInfo.url.length <= 512) {
-    baseActivity.buttons = [{ label: 'Listen', url: trackInfo.url }];
+
+  // Use official setActivity with fallback to raw request if needed
+  if (typeof rpcClient.setActivity === 'function') {
+    rpcClient.setActivity(activity).catch(() => {
+      if (rpcClient && isConnected) {
+        rpcClient.request('SET_ACTIVITY', {
+          pid: process.pid,
+          activity: {
+            details: activity.details,
+            state: activity.state,
+            timestamps: { start: activity.startTimestamp },
+            assets: activity.largeImageKey ? { large_image: activity.largeImageKey, large_text: cleanTitle } : undefined,
+            instance: false
+          }
+        }).catch(err => {
+          console.warn('[Discord RPC] SET_ACTIVITY error:', err.message || err);
+        });
+      }
+    });
+  } else {
+    rpcClient.request('SET_ACTIVITY', {
+      pid: process.pid,
+      activity: {
+        details: activity.details,
+        state: activity.state,
+        timestamps: { start: activity.startTimestamp },
+        assets: activity.largeImageKey ? { large_image: activity.largeImageKey, large_text: cleanTitle } : undefined,
+        instance: false
+      }
+    }).catch(err => {
+      console.warn('[Discord RPC] SET_ACTIVITY error:', err.message || err);
+    });
   }
-  const primaryActivity = showArtistStatus
-    ? Object.assign({}, baseActivity, { status_display_type: 1 })
-    : baseActivity;
-  rpcClient.request('SET_ACTIVITY', { pid: process.pid, activity: primaryActivity }).catch(() => {
-    if (rpcClient && isConnected) {
-      rpcClient.request('SET_ACTIVITY', { pid: process.pid, activity: baseActivity }).catch(err => {
-        console.warn('[Discord RPC] SET_ACTIVITY error:', err.message || err);
-      });
-    }
-  });
 }
 
 
@@ -92,7 +149,11 @@ function updatePresence(trackInfo) {
 
   if (isConnected && rpcClient) {
     _setActivity(trackInfo);
-  } else if (!rpcClient && !reconnectTimer) {
+  } else if (!rpcClient) {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
     initRPC();
   }
 }
@@ -160,3 +221,4 @@ module.exports = {
   destroyRPC,
   reconnectRPC,
 };
+

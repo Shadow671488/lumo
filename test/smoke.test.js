@@ -83,7 +83,10 @@ test('Spotify login reports callback errors and protects account routes', async 
 });
 
 test('renderer fetch sends the server token to Spotify account routes', async () => {
-  const source = fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8');
+  const appJsPath = fs.existsSync(path.join(__dirname, '../src/renderer/app.js'))
+    ? path.join(__dirname, '../src/renderer/app.js')
+    : path.join(__dirname, '../app.js');
+  const source = fs.readFileSync(appJsPath, 'utf8');
   const renderer = { electronAPI: { serverToken: getServerToken() }, fetch: fetch.bind(globalThis) };
   vm.runInNewContext(source.slice(0, source.indexOf('})();') + 5), { window: renderer, Headers, URL });
   const port = await startServer(0);
@@ -176,7 +179,10 @@ test('Spotify library reports skipped playlists and rejects malformed pages', as
 });
 
 test('renderer requires consent before importing a partial Spotify library', async () => {
-  const source = fs.readFileSync(path.join(__dirname, '../app.js'), 'utf8');
+  const appJsPath = fs.existsSync(path.join(__dirname, '../src/renderer/app.js'))
+    ? path.join(__dirname, '../src/renderer/app.js')
+    : path.join(__dirname, '../app.js');
+  const source = fs.readFileSync(appJsPath, 'utf8');
   const start = source.indexOf('  async function handleSpotifyLoginImport()');
   const end = source.indexOf('  async function handleSpotifyImportAction()', start);
   assert.ok(start > 0 && end > start);
@@ -205,3 +211,30 @@ test('renderer requires consent before importing a partial Spotify library', asy
   await handler();
   assert.strictEqual(imported.skippedPlaylists[0].name, 'Blocked');
 });
+
+test('renderer app.js has valid syntax and openProfileEditModal closes properly', () => {
+  const { execFileSync } = require('node:child_process');
+  const rendererAppPath = path.join(__dirname, '../src/renderer/app.js');
+  assert.doesNotThrow(() => {
+    execFileSync(process.execPath, ['--check', rendererAppPath]);
+  }, 'src/renderer/app.js must pass node syntax check without parse errors');
+
+  const appContent = fs.readFileSync(rendererAppPath, 'utf8');
+  assert.ok(appContent.includes('function openProfileEditModal()'), 'openProfileEditModal exists');
+  assert.ok(appContent.includes('openModal(modal);'), 'openModal(modal) is called inside modal openers');
+});
+
+test('renderer index.html includes splash screen and fallback dismissal', () => {
+  const htmlPath = path.join(__dirname, '../src/renderer/index.html');
+  const htmlContent = fs.readFileSync(htmlPath, 'utf8');
+  assert.ok(htmlContent.includes('id="splash"'), 'splash element exists in index.html');
+  assert.ok(htmlContent.includes('classList.add(\'hide\')'), 'fallback dismiss script present in index.html');
+  assert.ok(htmlContent.includes('unhandledrejection'), 'unhandledrejection fallback dismiss present in index.html');
+});
+
+test('renderer styles.css hides track-artwork with empty src to avoid broken image', () => {
+  const cssPath = path.join(__dirname, '../src/renderer/styles.css');
+  const cssContent = fs.readFileSync(cssPath, 'utf8');
+  assert.ok(cssContent.includes('.track-artwork[src=""]'), 'empty src track-artwork rule present');
+});
+

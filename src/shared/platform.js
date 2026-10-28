@@ -3,23 +3,64 @@ const os = require('os');
 const path = require('path');
 
 const IS_WIN = process.platform === 'win32';
-
-const DEFAULT_DATA_DIR = IS_WIN
-  ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Riff')
+const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local');
+const legacyDataDir = IS_WIN
+  ? path.join(localAppData, 'Riff')
   : process.platform === 'darwin'
   ? path.join(os.homedir(), 'Library', 'Application Support', 'Riff')
   : path.join(os.homedir(), '.cache', 'devsize');
-
-const CONFIG_DIR = IS_WIN
-  ? path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Riff')
+const DEFAULT_DATA_DIR = IS_WIN
+  ? path.join(localAppData, 'Lumo')
+  : process.platform === 'darwin'
+  ? path.join(os.homedir(), 'Library', 'Application Support', 'Lumo')
+  : path.join(os.homedir(), '.cache', 'lumo');
+const LEGACY_CONFIG_DIR = IS_WIN
+  ? path.join(localAppData, 'Riff')
   : process.platform === 'darwin'
   ? path.join(os.homedir(), 'Library', 'Application Support', 'Riff')
   : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'devsize');
+const CONFIG_DIR = IS_WIN
+  ? path.join(localAppData, 'Lumo')
+  : process.platform === 'darwin'
+  ? path.join(os.homedir(), 'Library', 'Application Support', 'Lumo')
+  : path.join(process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config'), 'lumo');
 const CONFIG_PATH = path.join(CONFIG_DIR, 'config.json');
+
+function renameLegacyDefault(oldDir, newDir) {
+  try {
+    if (!fs.existsSync(oldDir)) return;
+    if (!fs.existsSync(newDir)) {
+      fs.mkdirSync(path.dirname(newDir), { recursive: true });
+      fs.renameSync(oldDir, newDir);
+      return;
+    }
+    // If both brands already have a data folder, fill gaps in Lumo without
+    // overwriting current files or deleting the original Riff copy.
+    const copyMissing = (from, to) => {
+      for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+        const source = path.join(from, entry.name);
+        const target = path.join(to, entry.name);
+        if (entry.isDirectory()) {
+          if (!fs.existsSync(target)) fs.mkdirSync(target, { recursive: true });
+          if (fs.statSync(target).isDirectory()) copyMissing(source, target);
+        } else if (entry.isFile() && !fs.existsSync(target)) {
+          fs.copyFileSync(source, target);
+        }
+      }
+    };
+    if (fs.statSync(oldDir).isDirectory() && fs.statSync(newDir).isDirectory()) copyMissing(oldDir, newDir);
+  } catch (error) { console.warn('Lumo could not rename a legacy Riff data folder:', error.message); }
+}
+// Keep all existing settings, libraries, and caches by renaming old default folders in place.
+renameLegacyDefault(legacyDataDir, DEFAULT_DATA_DIR);
+if (LEGACY_CONFIG_DIR !== legacyDataDir) renameLegacyDefault(LEGACY_CONFIG_DIR, CONFIG_DIR);
 
 function readConfig() {
   try {
-    const parsed = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
+    let raw;
+    try { raw = fs.readFileSync(CONFIG_PATH, 'utf-8'); }
+    catch (_) { raw = fs.readFileSync(path.join(LEGACY_CONFIG_DIR, 'config.json'), 'utf-8'); }
+    const parsed = JSON.parse(raw);
     return parsed && typeof parsed === 'object' ? parsed : {};
   } catch (e) {
     return {};
@@ -27,13 +68,17 @@ function readConfig() {
 }
 
 function resolveDataDir() {
-  const override = process.env.RIFF_DATA_DIR;
+  const override = process.env.LUMO_DATA_DIR || process.env.RIFF_DATA_DIR;
   if (override && override.trim()) {
     try { return path.resolve(override.trim()); } catch (e) {}
   }
   const configured = readConfig().dataDir;
   if (configured && typeof configured === 'string' && configured.trim()) {
-    try { return path.resolve(configured.trim()); } catch (e) {}
+    try {
+      const configuredPath = path.resolve(configured.trim());
+      if (configuredPath === path.resolve(legacyDataDir)) return DEFAULT_DATA_DIR;
+      return configuredPath;
+    } catch (e) {}
   }
   return DEFAULT_DATA_DIR;
 }
@@ -50,7 +95,11 @@ function setDataDir(dir) {
 function resolveDownloadDir() {
   const configured = readConfig().downloadDir;
   if (configured && typeof configured === 'string' && configured.trim()) {
-    try { return path.resolve(configured.trim()); } catch (e) {}
+    try {
+      const configuredPath = path.resolve(configured.trim());
+      if (configuredPath === path.resolve(legacyDataDir)) return DEFAULT_DATA_DIR;
+      return configuredPath;
+    } catch (e) {}
   }
   return null;
 }
@@ -74,8 +123,9 @@ const METADATA_PATH = path.join(DATA_DIR, 'metadata.json');
 const LIBRARY_DIR = path.join(DATA_DIR, 'library');
 const LIBRARY_PATH = path.join(DATA_DIR, 'library.json');
 const BIN_DIR = path.join(DATA_DIR, 'bin');
-const TUTORIAL_MARKER = IS_WIN ? 'C:\\Riff\\.rifftutorial' : path.join(os.homedir(), '.rifftutorial');
-const TUTORIAL_MARKER_FALLBACK = path.join(DATA_DIR, '.rifftutorial');
+const TUTORIAL_MARKER = IS_WIN ? 'C:\\Lumo\\.lumotutorial' : path.join(os.homedir(), '.lumotutorial');
+const TUTORIAL_MARKER_FALLBACK = path.join(DATA_DIR, '.lumotutorial');
+const LEGACY_TUTORIAL_MARKERS = IS_WIN ? ['C:\\Riff\\.rifftutorial', path.join(legacyDataDir, '.rifftutorial')] : [path.join(os.homedir(), '.rifftutorial'), path.join(legacyDataDir, '.rifftutorial')];
 const STARTUP_PATH = path.join(DATA_DIR, 'startup.json');
 function readStartupConfig() { try { return JSON.parse(fs.readFileSync(STARTUP_PATH, 'utf8')) || {}; } catch (e) { return {}; } }
 function writeStartupConfig(patch) {
@@ -85,7 +135,7 @@ function writeStartupConfig(patch) {
     return true;
   } catch (e) { return false; }
 }
-function tutorialDone() { return fs.existsSync(TUTORIAL_MARKER) || fs.existsSync(TUTORIAL_MARKER_FALLBACK); }
+function tutorialDone() { return fs.existsSync(TUTORIAL_MARKER) || fs.existsSync(TUTORIAL_MARKER_FALLBACK) || LEGACY_TUTORIAL_MARKERS.some(file => fs.existsSync(file)); }
 function markTutorialDone() {
   for (const file of [TUTORIAL_MARKER, TUTORIAL_MARKER_FALLBACK]) {
     try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, '1'); return true; } catch (e) {}
@@ -147,9 +197,12 @@ const binaryCache = {};
 function resolveBinary(name) {
   if (name in binaryCache) return binaryCache[name];
   const exe = IS_WIN ? `${name}.exe` : name;
-  const envKey = `RIFF_${name.replace(/[^a-z0-9]/gi, '').toUpperCase()}`;
+  const envSuffix = name.replace(/[^a-z0-9]/gi, '').toUpperCase();
+  const envKey = `LUMO_${envSuffix}`;
+  const legacyEnvKey = `RIFF_${envSuffix}`;
   const candidates = [
     process.env[envKey],
+    process.env[legacyEnvKey],
     path.join(BIN_DIR, exe),
     process.resourcesPath && path.join(process.resourcesPath, 'bin', exe),
     path.join(__dirname, '../../bin', exe)

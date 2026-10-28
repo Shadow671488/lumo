@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="banner.png?v=2" alt="Riff - desktop music player and audio suite for YouTube Music, SoundCloud, and local files" width="100%">
+  <img src="banner.png?v=2" alt="Lumo - desktop music player and audio suite for YouTube Music, SoundCloud, and local files" width="100%">
 </p>
 
 <p align="center">
@@ -11,7 +11,7 @@
 </p>
 
 <h1 align="center">
-  <img src="github/readme/emoj2i.gif" width="48" height="48" align="absmiddle" alt="emoji">&nbsp;Riff
+  <img src="github/readme/emoj2i.gif" width="48" height="48" align="absmiddle" alt="emoji">&nbsp;Lumo
 </h1>
 
 <p align="center">
@@ -46,12 +46,12 @@
 </p>
 
 > [!NOTE]
-> **Pull requests are temporarily closed due to merge conflicts with an update coming soon (w global architecture change). Will be open when Riff updates.**
-## What is Riff?
+> **Pull requests are temporarily closed due to merge conflicts with an update coming soon (w global architecture change). Will be open when Lumo updates.**
+## What is Lumo?
 
-Riff is an open-source, telemetry-free desktop music app and player for **Windows, Linux, and macOS**. It unifies playback across **YouTube Music**, **YouTube**, **SoundCloud**, and offline local media into a single high-performance interface without ads, subscriptions, or login constraints. Provides very fancy UI and layout.
+Lumo is an open-source, telemetry-free desktop music app and player for **Windows, Linux, and macOS**. It unifies playback across **YouTube Music**, **YouTube**, **SoundCloud**, and offline local media into a single high-performance interface without ads, subscriptions, or login constraints. Provides very fancy UI and layout.
 
-Built with **Electron**, **Vanilla JavaScript**, and **WebGL**, Riff provides responsive UI interactions and hardware-accelerated audio visualization without runtime framework overhead. The project is distributed under the **MIT license** and enforces strict privacy: all configuration, cached streams, and playback history remain strictly on the local machine.
+Built with **Electron**, **Vanilla JavaScript**, and **WebGL**, Lumo provides responsive UI interactions and hardware-accelerated audio visualization without runtime framework overhead. The project is distributed under the **MIT license** and enforces strict privacy: all configuration, cached streams, and playback history remain strictly on the local machine.
 
 ## Features
 
@@ -66,10 +66,10 @@ Built with **Electron**, **Vanilla JavaScript**, and **WebGL**, Riff provides re
 - **Fullscreen mode** with fancy lyrics animation.
 - **Albums** - see all of your favorite artist albums.
 - **Customization** - built in theme editor, configure everything, and a CSS editor, with animated backgrounds and interface opacity sliders.
-- **Plugins** - built-in plugin feature where you can add a plugin to edit how Riff works with something or add a new function.
+- **Plugins** - built-in plugin feature where you can add a plugin to edit how Lumo works with something or add a new function.
 ## Built-in Audio Suite
 
-Riff includes an integrated audio engineering toolkit accessible directly within the player interface:
+Lumo includes an integrated audio engineering toolkit accessible directly within the player interface:
 
 ### Visual Audio Editor
 - **Lossless Audio Trimming**: Define start and end boundaries to trim tracks without transcoding loss.
@@ -93,7 +93,7 @@ Riff includes an integrated audio engineering toolkit accessible directly within
 
 ## Material Design 3 Expressive UI
 
-Riff implements the Material Design 3 (M3 Expressive) specification:
+Lumo implements the Material Design 3 (M3 Expressive) specification:
 
 - **Dynamic Color Extraction**: Generates responsive UI tonal palettes on the fly based on the dominant and secondary hues of active album art.
 - **Deep UI Customization**: Configurable banner backdrops, mesh gradients, blur filters, and typography controls.
@@ -126,24 +126,24 @@ Standard releases include all necessary dependencies (bundled yt-dlp and ffmpeg 
 macOS support is currently experimental and compiled via continuous integration.
 
 1. Download the appropriate image:
-   - `Riff-<version>-mac-arm64.dmg` for Apple Silicon (M1 / M2 / M3 / M4)
-   - `Riff-<version>-mac-x64.dmg` for Intel-based hardware
-2. Open the disk image and drag Riff to your `Applications` directory.
-3. Because the binary is unsigned, right-click `Riff.app` in `Applications`, select **Open**, and confirm the prompt.
+   - `Lumo-<version>-mac-arm64.dmg` for Apple Silicon (M1 / M2 / M3 / M4)
+   - `Lumo-<version>-mac-x64.dmg` for Intel-based hardware
+2. Open the disk image and drag Lumo to your `Applications` directory.
+3. Because the binary is unsigned, right-click `Lumo.app` in `Applications`, select **Open**, and confirm the prompt.
 4. If macOS flags the bundle as damaged, execute the following command in Terminal:
    ```bash
-   xattr -cr /Applications/Riff.app
+   xattr -cr /Applications/Lumo.app
    ```
    If a quarantine warning occurs when mounting the `.dmg` itself, run:
    ```bash
-   xattr -d -r com.apple.quarantine /path/to/Riff.dmg
+   xattr -d -r com.apple.quarantine /path/to/Lumo.dmg
    ```
-5. Install the required runtime binaries via Homebrew (Riff detects Homebrew paths automatically):
+5. Install the required runtime binaries via Homebrew (Lumo detects Homebrew paths automatically):
    ```bash
    brew install yt-dlp ffmpeg
    ```
 
-macOS application data and local indexes are stored in `~/Library/Application Support/Riff`.
+macOS application data and local indexes are stored in `~/Library/Application Support/Lumo`.
 
 ## Build from source
 
@@ -161,43 +161,43 @@ The exact build output depends on the current project configuration.
 
 ## Memory usage
 
-Riff (single Electron renderer and server process) typically utilizes approximately **180 MB of RAM** during steady-state playback. Actual footprint varies based on active visualizer modes, library size, and OS window compositing.
+Lumo (single Electron renderer and server process) typically utilizes approximately **180 MB of RAM** during steady-state playback. Actual footprint varies based on active visualizer modes, library size, and OS window compositing.
 
 ### Memory usage is only classified as a leak when sustained footprint exceeds 600 MB.
 
 ## Mobile versions
 
-There is no official Riff client for Android or iOS. Third-party community forks are documented below:
+There is no official Lumo client for Android or iOS. Third-party community forks are documented below:
 ### https://rootless.shit.vc/fork
 Additional mobile implementations may be reviewed in future releases.
 
 ## FAQ
 
-**Is Riff free?**
-Yes. Riff is free software published under the permissive MIT license. There are no subscriptions, paywalls, or premium tiers.
+**Is Lumo free?**
+Yes. Lumo is free software published under the permissive MIT license. There are no subscriptions, paywalls, or premium tiers.
 
-**Does Riff display advertisements?**
+**Does Lumo display advertisements?**
 No. Streams from YouTube Music, YouTube, and SoundCloud are resolved directly and play without advertisements.
 
 **Is an account or sign-in required?**
-No. Riff requires no account creation, credentials, or authentication. Telemetry and analytic tracking are strictly omitted.
+No. Lumo requires no account creation, credentials, or authentication. Telemetry and analytic tracking are strictly omitted.
 
 **Which operating systems are supported?**
 Windows 10/11, modern Linux distributions, and macOS (experimental).
 
-**Can Riff function as an offline local music player?**
-Yes. Riff natively indexes local audio files (including lossless FLAC, WAV, MP3, and OGG), reads standard metadata tags and embedded artwork, and manages playlists without altering underlying disk files.
+**Can Lumo function as an offline local music player?**
+Yes. Lumo natively indexes local audio files (including lossless FLAC, WAV, MP3, and OGG), reads standard metadata tags and embedded artwork, and manages playlists without altering underlying disk files.
 
-**Can I use Riff entirely offline?**
+**Can I use Lumo entirely offline?**
 Yes. Downloaded tracks, saved audio segments, and indexed local libraries function without an internet connection.
 
 **How does playlist migration work?**
-Paste any public Spotify, Apple Music, YouTube Music, or SoundCloud playlist link. Riff extracts track titles and artists, batches requests to resolve streams on your active platform, and saves the result as an editable local playlist.
+Paste any public Spotify, Apple Music, YouTube Music, or SoundCloud playlist link. Lumo extracts track titles and artists, batches requests to resolve streams on your active platform, and saves the result as an editable local playlist.
 
-**Does Riff support synchronized lyrics?**
-Yes. Riff supports online synchronized lyrics, local LRC files, manual timing adjustments, and real-time synchronized karaoke display.
+**Does Lumo support synchronized lyrics?**
+Yes. Lumo supports online synchronized lyrics, local LRC files, manual timing adjustments, and real-time synchronized karaoke display.
 
-**Does Riff integrate with Discord?**
+**Does Lumo integrate with Discord?**
 Yes. Native Discord Rich Presence displays the currently playing track title, artist, elapsed time, and platform indicator.
 
 **Are there official mobile builds?**
@@ -213,7 +213,7 @@ You can support ongoing development via [Ko-fi](https://ko-fi.com/rootlesszen). 
 
 ## Disclaimer
 
-Riff is developed for educational purposes and personal media management. Users are responsible for adhering to the terms of service of third-party platforms and applicable local copyright regulations.
+Lumo is developed for educational purposes and personal media management. Users are responsible for adhering to the terms of service of third-party platforms and applicable local copyright regulations.
 
 ## License
 

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Riff</title>
+  <title>Lumo</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Google+Sans+Text:wght@400;500;700&display=swap" rel="stylesheet">
@@ -11,6 +11,20 @@
 </head>
 <body class="no-nav-transition">
   <div id="splash"><div id="splash-logo"></div></div>
+  <script>
+    (function() {
+      const dismiss = () => {
+        const s = document.getElementById('splash');
+        if (s && s.isConnected && !s.classList.contains('hide')) {
+          s.classList.add('hide');
+          setTimeout(() => { if (s.parentNode) s.parentNode.removeChild(s); }, 480);
+        }
+      };
+      window.addEventListener('error', dismiss, { once: true });
+      window.addEventListener('unhandledrejection', dismiss, { once: true });
+      setTimeout(dismiss, 3500);
+    })();
+  </script>
   <div id="fx-root"></div>
 
 
@@ -36,7 +50,7 @@
 
   <header class="titlebar" id="titlebar">
     <div class="titlebar-drag">
-      <div class="app-logo" aria-label="Riff"><span class="titlebar-riff-icon"></span></div>
+      <div class="app-logo" aria-label="Lumo"><span class="titlebar-riff-icon"></span></div>
     </div>
     <div class="titlebar-controls">
       <button class="titlebar-btn" id="btn-mini-lyrics" title="Lyrics" aria-label="Lyrics">
@@ -72,29 +86,7 @@
         </button>
       </div>
     </div>
-
-    <div class="platform-switch-container">
-      <div class="platform-pill-switch">
-        <button class="platform-btn" data-platform="youtube" id="platform-yt" title="YouTube">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M21.58 7.19c-.23-.86-.91-1.54-1.77-1.77C18.25 5 12 5 12 5s-6.25 0-7.81.42c-.86.23-1.54.91-1.77 1.77C2 8.75 2 12 2 12s0 3.25.42 4.81c.23.86.91 1.54 1.77 1.77C5.75 19 12 19 12 19s6.25 0 7.81-.42c.86-.23 1.54-.91 1.77-1.77C22 15.25 22 12 22 12s0-3.25-.42-4.81zM10 15V9l5.2 3L10 15z"/>
-          </svg>
-          <span>YouTube</span>
-        </button>
-        <button class="platform-btn active" data-platform="ytmusic" id="platform-ytm" title="YouTube Music">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm-2-12.5v9l6-4.5-6-4.5z"/>
-          </svg>
-          <span>YouTube Music</span>
-        </button>
-        <button class="platform-btn" data-platform="soundcloud" id="platform-sc" title="SoundCloud">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M11.5 14.5c0 .28-.22.5-.5.5s-.5-.22-.5-.5v-4c0-.28.22-.5.5-.5s.5.22.5.5v4zm-2 0c0 .28-.22.5-.5.5s-.5-.22-.5-.5v-3c0-.28.22-.5.5-.5s.5.22.5.5v3zm-2 0c0 .28-.22.5-.5.5s-.5-.22-.5-.5v-2c0-.28.22-.5.5-.5s.5.22.5.5v2zm-2 0c0 .28-.22.5-.5.5s-.5-.22-.5-.5v-1c0-.28.22-.5.5-.5s.5.22.5.5v1zm14.5-.5c0 1.93-1.57 3.5-3.5 3.5H13V9.1c.7-.6 1.6-1.1 2.6-1.1 2.2 0 4.1 1.6 4.4 3.8.3-.2.7-.3 1-.3 1.4 0 2.5 1.1 2.5 2.5z"/>
-          </svg>
-          <span>SoundCloud</span>
-        </button>
-      </div>
-    </div>
+    <button class="user-profile-nav-btn" id="btn-user-profile" title="User Profile" aria-label="User Profile"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg><span class="profile-nav-name">Guest</span></button>
   </div>
 
   <div class="app-layout">
@@ -113,17 +105,17 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path>
             </svg>
-            <span class="nav-badge" id="favorites-count">0</span>
+            <span class="nav-badge" id="favorites-count" hidden></span>
           </div>
         </button>
-        <button class="nav-item" data-view="albums" id="nav-albums" title="Albums"><div class="nav-indicator"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg><span class="nav-badge" id="albums-count">0</span></div></button>
+        <button class="nav-item" data-view="albums" id="nav-albums" title="Albums"><div class="nav-indicator"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg><span class="nav-badge" id="albums-count" hidden></span></div></button>
 
         <button class="nav-item" data-view="local" id="nav-local" title="My files">
           <div class="nav-indicator">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
             </svg>
-            <span class="nav-badge" id="local-count">0</span>
+            <span class="nav-badge" id="local-count" hidden></span>
           </div>
         </button>
 
@@ -133,7 +125,17 @@
               <circle cx="12" cy="12" r="10"></circle>
               <polyline points="12 6 12 12 16 14"></polyline>
             </svg>
-            <span class="nav-badge" id="history-count" hidden>0</span>
+            <span class="nav-badge" id="history-count" hidden></span>
+          </div>
+        </button>
+
+        <button class="nav-item" data-view="stats" id="nav-stats" title="Statistics">
+          <div class="nav-indicator">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="20" x2="18" y2="10"></line>
+              <line x1="12" y1="20" x2="12" y2="4"></line>
+              <line x1="6" y1="20" x2="6" y2="14"></line>
+            </svg>
           </div>
         </button>
 
@@ -144,7 +146,7 @@
               <line x1="4" y1="12" x2="20" y2="12"></line>
               <line x1="4" y1="17" x2="14" y2="17"></line>
             </svg>
-            <span class="nav-badge" id="queue-count">0</span>
+            <span class="nav-badge" id="queue-count" hidden></span>
           </div>
         </button>
 
@@ -168,6 +170,13 @@
         </div>
 
         <div class="sidebar-bottom-spacer"></div>
+
+        <button class="nav-item nav-profile-item" data-view="profile" id="nav-profile" title="My profile" aria-label="My profile">
+          <div class="nav-indicator">
+            <img id="nav-sidebar-profile-img" class="nav-sidebar-profile-img hidden" alt="" draggable="false">
+            <span id="nav-sidebar-profile-initial" class="nav-sidebar-profile-initial">G</span>
+          </div>
+        </button>
 
         <button class="nav-item" data-view="settings" id="nav-settings" title="Settings">
           <div class="nav-indicator">
@@ -255,12 +264,131 @@
             <div class="home-hero-dots" id="home-hero-dots"></div>
           </div>
           <div class="sp-home" id="sp-home"><section class="sp-section" id="sp-made-sec"><h2><svg class="sp-ico" viewBox="0 0 24 24"><path d="M4 10a1 1 0 0 1 1 1v2a1 1 0 0 1-2 0v-2a1 1 0 0 1 1-1zm4-4a1 1 0 0 1 1 1v10a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1zm4-4a1 1 0 0 1 1 1v18a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1zm4 4a1 1 0 0 1 1 1v10a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1zm4 4a1 1 0 0 1 1 1v2a1 1 0 1 1-2 0v-2a1 1 0 0 1 1-1z"/></svg><span data-i18n>For you</span><button class="btn-icon-pill" id="btn-regen-mixes" aria-label="Regenerate mixes" title="Regenerate mixes" style="margin-left: auto; width: 32px; height: 32px;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg></button></h2><div class="sp-row" id="sp-made"></div></section><section class="sp-section" id="sp-quick-sec"><h2><svg class="sp-ico" viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg><span data-i18n>Home</span></h2><div class="sp-quick" id="sp-quick"></div></section><section class="sp-section" id="sp-trend-sec"><h2><svg class="sp-ico" viewBox="0 0 24 24"><path d="M12 2c1 4 5 5.5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-6 1-9z"/></svg><span data-i18n>Trending now</span></h2><div class="sp-row" id="sp-trend"></div></section><section class="sp-section" id="sp-artists-sec"><h2><svg class="sp-ico" viewBox="0 0 24 24"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg><span data-i18n>Favorite artists</span></h2><div class="sp-row fav-artists-row" id="sp-artists"></div></section></div>
+          <div class="riff-dynamic-sections" id="riff-dynamic-sections">
+            <section class="sp-section" id="riff-sec-quick-picks">
+              <h2><svg class="sp-ico" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg><span data-i18n>Quick Picks</span></h2>
+              <div class="sp-quick" id="riff-quick-picks-grid"></div>
+            </section>
+            <section class="sp-section" id="riff-sec-trending">
+              <h2><svg class="sp-ico" viewBox="0 0 24 24"><path d="M12 2c1 4 5 5.5 5 10a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-3-1-6 1-9z"/></svg><span data-i18n>Trending Now</span></h2>
+              <div class="sp-row" id="riff-trending-row"></div>
+            </section>
+            <section class="sp-section" id="riff-sec-popular">
+              <h2><svg class="sp-ico" viewBox="0 0 24 24"><path d="M4 10a1 1 0 0 1 1 1v2a1 1 0 0 1-2 0v-2a1 1 0 0 1 1-1zm4-4a1 1 0 0 1 1 1v10a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1zm4-4a1 1 0 0 1 1 1v18a1 1 0 1 1-2 0V3a1 1 0 0 1 1-1zm4 4a1 1 0 0 1 1 1v10a1 1 0 1 1-2 0V7a1 1 0 0 1 1-1zm4 4a1 1 0 0 1 1 1v2a1 1 0 1 1-2 0v-2a1 1 0 0 1 1-1z"/></svg><span data-i18n>Popular Tracks</span></h2>
+              <div class="sp-row" id="riff-popular-row"></div>
+            </section>
+            <section class="sp-section" id="riff-sec-recently-played">
+              <h2><svg class="sp-ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg><span data-i18n>Recently Played</span></h2>
+              <div class="sp-row" id="riff-recently-played-row"></div>
+            </section>
+          </div>
         </div>
 
         <div class="search-results-container hidden" id="search-results-container">
           <div id="search-artist-card-container"></div>
           <div id="search-albums-container"></div>
           <div class="tracks-list" id="search-tracks-list"></div>
+        </div>
+      </section>
+
+      <section class="content-view" id="view-profile">
+        <div class="profile-private-content" id="profile-private-content">
+        <div class="profile-header-card">
+          <div class="profile-avatar-wrap" id="profile-avatar-wrap">
+            <img id="profile-avatar-img" class="profile-avatar-img hidden" src="" alt="Avatar">
+            <div class="profile-avatar-placeholder" id="profile-avatar-initial">G</div>
+          </div>
+          <div class="profile-header-info" style="flex:1;">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+              <h1 class="profile-username" id="profile-display-name">Guest</h1>
+              <span class="profile-verified-badge hidden" id="profile-verified-badge" title="Verified account" aria-label="Verified account"><img src="../../assets/badge-verified.png" alt=""></span>
+              <span class="profile-community-badge profile-badge-bug-hunter hidden" id="profile-bug-hunter-badge" title="Bug Hunter" aria-label="Bug Hunter"><img src="../../assets/badge-bug-hunter.png" alt=""></span><span class="profile-community-badge profile-badge-alpha-tester hidden" id="profile-alpha-tester-badge" title="Alpha Tester" aria-label="Alpha Tester"><img src="../../assets/badge-alpha-tester.png" alt=""></span>
+              <span id="profile-account-type" class="profile-badge-guest" style="display:none;"></span>
+              <button class="btn-outline-pill" id="btn-edit-profile" type="button" style="padding:4px 14px;font-size:12px;cursor:pointer;">Register / Log In</button>
+              <button class="btn-icon-pill owner-tools-trigger hidden" id="btn-owner-tools" type="button" title="Owner tools" aria-label="Owner tools"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
+            </div>
+            <div class="profile-handle" id="profile-display-handle"></div>
+            <p class="profile-bio" id="profile-display-bio">Music enthusiast & audio explorer</p>
+            <button type="button" class="profile-bio profile-genres favorite-artist-profile-link" id="profile-display-genres" style="display:none;"></button>
+            <div class="profile-stats-row">
+              <div class="profile-stat"><span class="stat-num" id="profile-stat-favorites">0</span><span class="stat-label">Favorites</span></div>
+              <div class="profile-stat"><span class="stat-num" id="profile-stat-reposts">0</span><span class="stat-label">Reposts</span></div>
+              <div class="profile-stat"><span class="stat-num" id="profile-stat-playlists">1</span><span class="stat-label">Playlists</span></div>
+              <div class="profile-stat"><span class="stat-num" id="profile-stat-friends">0</span><span class="stat-label">Friends</span></div>
+            </div>
+          </div>
+        </div>
+
+        <section class="profile-privacy-card" id="profile-privacy-card" aria-label="Profile privacy">
+          <div class="profile-privacy-heading">
+            <div>
+              <h3>Who can see your activity?</h3>
+              <p>Choose who can view your liked tracks and reposts.</p>
+            </div>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="10" width="16" height="11" rx="2"></rect><path d="M8 10V7a4 4 0 0 1 8 0v3"></path></svg>
+          </div>
+          <div class="profile-privacy-row">
+            <span><strong>Liked tracks</strong><small>Control who can see the songs you like.</small></span>
+            <div class="profile-privacy-select">
+              <button type="button" class="privacy-select-trigger" id="profile-likes-visibility" data-value="public" aria-haspopup="listbox" aria-expanded="false"><span class="privacy-select-value">Public</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button>
+              <div class="privacy-select-menu hidden" role="listbox" aria-label="Who can see liked tracks">
+                <button type="button" role="option" data-value="public">Public</button><button type="button" role="option" data-value="friends">Friends</button><button type="button" role="option" data-value="private">Only me</button>
+              </div>
+            </div>
+          </div>
+          <div class="profile-privacy-row">
+            <span><strong>Reposts</strong><small>Control who can see your reposted tracks and playlists.</small></span>
+            <div class="profile-privacy-select">
+              <button type="button" class="privacy-select-trigger" id="profile-reposts-visibility" data-value="public" aria-haspopup="listbox" aria-expanded="false"><span class="privacy-select-value">Public</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 10 5 5 5-5"/></svg></button>
+              <div class="privacy-select-menu hidden" role="listbox" aria-label="Who can see reposts">
+                <button type="button" role="option" data-value="public">Public</button><button type="button" role="option" data-value="friends">Friends</button><button type="button" role="option" data-value="private">Only me</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <div class="profile-pinned-section" id="profile-pinned-section">
+          <div class="section-title-row">
+            <h3>Favorite Song</h3>
+            <button class="btn-outline-pill" id="btn-change-pinned-track">Change</button>
+          </div>
+          <div class="pinned-track-card" id="profile-pinned-card"></div>
+        </div>
+
+        <div class="profile-tabs-nav">
+          <button class="profile-tab active" data-tab="liked">Liked Tracks</button>
+          <button class="profile-tab" data-tab="reposts">Reposts</button>
+          <button class="profile-tab" data-tab="playlists">Favorite Playlists</button>
+          <button class="profile-tab" data-tab="friends">Friends</button>
+        </div>
+
+        <div class="profile-tab-content" id="profile-tab-content">
+          <div class="tracks-list" id="profile-tracks-list"></div>
+          <div class="playlists-list" id="profile-playlists-list" style="display: none;"></div>
+          <div class="friends-list" id="profile-friends-list" style="display: none; flex-direction: column;">
+            <div class="friends-toolbar" id="friends-toolbar">
+              <div style="position:relative;flex:1;max-width:360px;">
+                <input type="text" class="input-add-friend" id="input-add-friend-name" placeholder="Enter friend's nickname..." autocomplete="off" style="width:100%;">
+                <div class="friend-autocomplete-dropdown hidden" id="friend-autocomplete-dropdown"></div>
+              </div>
+              <button class="btn-pill-primary" id="btn-add-friend" type="button" style="padding:0 18px;height:38px;border-radius:9999px;font-weight:600;cursor:pointer;">Add Friend</button>
+            </div>
+            <div id="friends-cards-container" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;width:100%;"></div>
+          </div>
+        </div>
+        </div>
+        <div class="profile-guest-gate hidden" id="profile-guest-gate" aria-hidden="true">
+          <div class="profile-guest-gate-card">
+            <div class="profile-guest-gate-icon" aria-hidden="true">
+              <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+            </div>
+            <h2>Make this profile yours</h2>
+            <p>Sign in or create an account to choose a favorite song and use your profile.</p>
+            <div class="profile-guest-gate-actions">
+              <button class="btn-pill-primary" id="btn-profile-register" type="button">Register</button>
+              <button class="btn-outline-pill" id="btn-profile-login" type="button">Log In</button>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -337,6 +465,63 @@
         </div>
       </section>
 
+      <section class="content-view" id="view-stats">
+        <div class="view-header stats-header">
+          <div>
+            <h2>Statistics</h2>
+            <p class="stats-subtitle">Your listening activity</p>
+          </div>
+          <div class="stats-header-actions">
+            <div class="stats-period-switch" id="stats-period-switch" role="tablist" aria-label="Statistics period">
+              <button type="button" class="stats-period-btn" data-stats-period="today" role="tab">Today</button>
+              <button type="button" class="stats-period-btn" data-stats-period="7d" role="tab">Last 7 days</button>
+              <button type="button" class="stats-period-btn" data-stats-period="all" role="tab">All time</button>
+            </div>
+            <button type="button" class="btn-icon-pill" id="btn-stats-refresh" title="Refresh statistics" aria-label="Refresh statistics">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="stats-top-grid">
+          <div class="stats-card stats-summary-card">
+            <span class="stats-label">Total listening time</span>
+            <span class="stats-big-value" id="stats-total-value">0m</span>
+            <span class="stats-hint" id="stats-total-hint">No listening yet</span>
+          </div>
+          <div class="stats-card stats-summary-card">
+            <span class="stats-label">Listening streak</span>
+            <span class="stats-big-value" id="stats-streak-value">0 days</span>
+            <span class="stats-hint">Current streak</span>
+            <span class="stats-streak-best">Best: <strong id="stats-streak-best">0 days</strong></span>
+          </div>
+        </div>
+
+        <div class="stats-card">
+          <div class="stats-card-head">
+            <span class="stats-label">Top artists</span>
+            <span class="stats-hint">By listening time</span>
+          </div>
+          <div class="stats-artist-list" id="stats-artist-list"></div>
+        </div>
+
+        <div class="stats-card">
+          <div class="stats-card-head">
+            <span class="stats-label">Top tracks</span>
+            <span class="stats-hint">Most played by time</span>
+          </div>
+          <div class="stats-track-list" id="stats-track-list"></div>
+        </div>
+
+        <div class="stats-card">
+          <div class="stats-card-head">
+            <span class="stats-label">Activity by hour</span>
+            <span class="stats-hint">When you listen most</span>
+          </div>
+          <div class="stats-hours" id="stats-hours"></div>
+        </div>
+      </section>
+
       <section class="content-view" id="view-queue">
         <div class="view-header">
           <h2>Playback queue</h2>
@@ -360,6 +545,10 @@
             <div id="playlist-detail-desc" class="playlist-inline-desc" data-placeholder="Add a description..."></div>
             <span class="view-subtitle" id="playlist-detail-count">0 tracks</span>
             <div class="action-bar playlist-actions">
+              <button class="btn-pill-primary" id="btn-play-playlist" type="button" title="Play playlist" aria-label="Play playlist" style="display:inline-flex;align-items:center;justify-content:center;width:44px;height:44px;min-width:44px;border-radius:50%;padding:0;cursor:pointer;flex-shrink:0;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20 6 4"></polygon></svg>
+                <span id="btn-play-playlist-label" style="display:none;">Play</span>
+              </button>
               <select class="pill-select" id="playlist-sort" title="Sort playlist" aria-label="Sort playlist" style="display:none">
                 <option value="manual">Manual order</option>
                 <option value="added-desc">Date added (newest)</option>
@@ -378,6 +567,9 @@
               </div>
               <button class="btn-icon-pill" id="btn-fav-all-playlist" title="Add all to favorites" aria-label="Add all to favorites">
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+              </button>
+              <button class="btn-icon-pill" id="btn-repost-playlist" title="Repost playlist" aria-label="Repost playlist">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
               </button>
               <button class="btn-outline-pill" id="btn-select-playlist" title="Select tracks" aria-label="Select tracks">
                 <span>Select</span>
@@ -625,8 +817,18 @@
                 <button type="button" class="theme-mode-btn active" id="font-opt-google" data-font="google">Google Sans</button>
                 <button type="button" class="theme-mode-btn" id="font-opt-sf" data-font="sf">SF Pro</button>
                 <button type="button" class="theme-mode-btn" id="font-opt-system" data-font="system">System</button>
+                <button type="button" class="theme-mode-btn" id="font-opt-custom" data-font="custom">Custom</button>
               </div>
-              <div style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline); margin-top: 6px;">SF Pro is loaded from fonts.cdnfonts.com when selected</div>
+              <div style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline); margin-top: 6px;">Select preset font or upload a custom font file below</div>
+              <div class="custom-font-uploader" id="custom-font-uploader" style="display: flex; align-items: center; gap: 10px; margin-top: 10px; flex-wrap: wrap;">
+                <label class="btn-outline-pill" style="cursor: pointer; padding: 6px 14px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                  <span>Upload Font (.ttf / .woff / .woff2)</span>
+                  <input type="file" id="input-custom-font-file" accept=".ttf,.woff,.woff2,.otf" style="display: none;">
+                </label>
+                <span id="custom-font-name-label" style="font-size: 12px; color: var(--md-sys-color-on-surface-variant);">No custom font uploaded</span>
+                <button type="button" class="btn-icon-pill hidden" id="btn-reset-custom-font" title="Remove custom font" style="width: 24px; height: 24px; padding: 0;">✕</button>
+              </div>
             </div>
 
             <div class="setting-item">
@@ -653,7 +855,7 @@
               </div>
             </div>
 
-            <div class="setting-item" id="setting-search-pos-row">
+            <div class="setting-item" id="setting-search-pos-row" style="display: none !important;">
               <div class="setting-item-top">
                 <span class="setting-name">Position of searchbar</span>
               </div>
@@ -680,7 +882,9 @@
                 <span class="setting-name">Search engine</span>
               </div>
               <select class="pill-select" id="select-engine-api" style="display:none">
+                <option value="all">All (YouTube, YouTube Music, Apple Music, SoundCloud)</option>
                 <option value="youtube">YouTube</option>
+                <option value="applemusic">Apple Music</option>
                 <option value="ytmusic" selected>YouTube Music</option>
                 <option value="soundcloud">SoundCloud</option>
               </select>
@@ -690,30 +894,12 @@
                   <svg class="m3-dropdown-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"></polyline></svg>
                 </button>
                 <div class="m3-dropdown-menu" id="engine-api-menu">
+                  <button class="m3-dropdown-option" data-value="all" type="button">All (YouTube, YouTube Music, Apple Music, SoundCloud)</button>
                   <button class="m3-dropdown-option" data-value="youtube" type="button">YouTube</button>
+                  <button class="m3-dropdown-option" data-value="applemusic" type="button">Apple Music</button>
                   <button class="m3-dropdown-option selected" data-value="ytmusic" type="button">YouTube Music</button>
                   <button class="m3-dropdown-option" data-value="soundcloud" type="button">SoundCloud</button>
                 </div>
-              </div>
-            </div>
-
-            <div class="setting-item">
-              <div class="setting-item-top" style="align-items: center;">
-                <div style="display: flex; flex-direction: column; gap: 2px;">
-                  <span class="setting-name">Compact engine buttons</span>
-                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Show only icons for YouTube, YouTube Music, and SoundCloud in the top bar</span>
-                </div>
-                <button class="effect-switch-btn" id="btn-compact-engine-btns"><span class="thumb"></span></button>
-              </div>
-            </div>
-
-            <div class="setting-item">
-              <div class="setting-item-top" style="align-items: center;">
-                <div style="display: flex; flex-direction: column; gap: 2px;">
-                  <span class="setting-name">Hide engine buttons</span>
-                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Hide search engine buttons from the top bar</span>
-                </div>
-                <button class="effect-switch-btn" id="btn-hide-engine-btns"><span class="thumb"></span></button>
               </div>
             </div>
 
@@ -903,8 +1089,8 @@
                   <div style="display: flex; flex-direction: column; gap: 4px;">
                     <div class="settings-section-title">Custom themes</div>
                     <div style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-on-surface-variant); font-weight: normal; line-height: 1.4;">
-                      Add a .css file to restyle Riff.<br>
-                      Tip: Riff sets its color variables from JavaScript, so a theme must use !important to override them (for example --md-sys-color-primary: #ff4081 !important).<br>
+                      Add a .css file to restyle Lumo.<br>
+                      Tip: Lumo sets its color variables from JavaScript, so a theme must use !important to override them (for example --md-sys-color-primary: #ff4081 !important).<br>
                       Ctrl+Shift+R turns every custom theme and CSS off if something breaks.
                     </div>
                   </div>
@@ -914,7 +1100,7 @@
               </div>
 
               <div class="settings-section" data-cat="plugins">
-                <div class="ct-head"><div><div class="settings-section-title">Plugins</div><div class="setting-hint"><span class="plugins-warn">Plugins are JavaScript files with full access to Riff.</span> Only add plugins you trust. They live in the plugins folder: delete a file and the plugin is gone. Ctrl+Shift+R turns every plugin off.</div></div><div class="ct-actions"><button class="btn-outline-pill" id="btn-plugins-folder">Open folder</button><button class="btn-outline-pill" id="btn-plugins-reload">Reload list</button><button class="btn-pill-primary" id="btn-add-plugin">Add</button></div></div>
+                <div class="ct-head"><div><div class="settings-section-title">Plugins</div><div class="setting-hint"><span class="plugins-warn">Plugins are JavaScript files with full access to Lumo.</span> Only add plugins you trust. They live in the plugins folder: delete a file and the plugin is gone. Ctrl+Shift+R turns every plugin off.</div></div><div class="ct-actions"><button class="btn-outline-pill" id="btn-plugins-folder">Open folder</button><button class="btn-outline-pill" id="btn-plugins-reload">Reload list</button><button class="btn-pill-primary" id="btn-add-plugin">Add</button></div></div>
                 <div class="ct-list m3-group" id="plugins-list"></div>
               </div>
 
@@ -1219,7 +1405,7 @@
               <div class="setting-item-top" style="align-items: center;">
                 <div style="display: flex; flex-direction: column; gap: 2px;">
                   <span class="setting-name">Save sound settings</span>
-                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Automatically save High Quality, effects and the active preset</span>
+                  <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Automatically saves EQ, effects, speed, volume and the active preset</span>
                 </div>
                 <button class="effect-switch-btn" id="btn-persist-sound-settings"><span class="thumb"></span></button>
               </div>
@@ -1228,14 +1414,14 @@
             <div class="setting-item">
               <div class="setting-item-top" style="align-items: center;">
                 <span class="setting-name">Wavy progress bar</span>
-                <button class="effect-switch-btn active" id="btn-wavy-progress"><span class="thumb"></span></button>
+                <button class="effect-switch-btn" id="btn-wavy-progress"><span class="thumb"></span></button>
               </div>
             </div>
 
             <div class="setting-item">
               <div class="setting-item-top" style="align-items: center;">
                 <span class="setting-name">Progress bar knob</span>
-                <button class="effect-switch-btn" id="btn-progress-knob"><span class="thumb"></span></button>
+                <button class="effect-switch-btn active" id="btn-progress-knob"><span class="thumb"></span></button>
               </div>
             </div>
 
@@ -1245,7 +1431,7 @@
                   <span class="setting-name">Progress bar background</span>
                   <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Show the uncompleted track rail in the playbar</span>
                 </div>
-                <button class="effect-switch-btn" id="btn-progress-bg"><span class="thumb"></span></button>
+                <button class="effect-switch-btn active" id="btn-progress-bg"><span class="thumb"></span></button>
               </div>
             </div>
 
@@ -1458,7 +1644,7 @@
               <div class="setting-item-top" style="align-items: center;">
                 <div style="display: flex; flex-direction: column; gap: 2px;">
                   <span class="setting-name" data-i18n>Show artist in Discord status</span>
-                  <span class="setting-hint" data-i18n>Display "Listening to Artist" instead of "Listening to Riff" in compact profile status</span>
+                  <span class="setting-hint" data-i18n>Display "Listening to Artist" instead of "Listening to Lumo" in compact profile status</span>
                 </div>
                 <button type="button" class="effect-switch-btn active" id="btn-discord-artist-status"><span class="thumb"></span></button>
               </div>
@@ -1685,7 +1871,7 @@
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
                   </div>
                   <div style="display: flex; flex-direction: column;">
-                    <span class="setting-name">Export Riff account (.rfacc)</span>
+                    <span class="setting-name">Export Lumo account (.rfacc)</span>
                     <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Backup full library, playlists, settings and history</span>
                   </div>
                 </div>
@@ -1700,7 +1886,7 @@
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                   </div>
                   <div style="display: flex; flex-direction: column;">
-                    <span class="setting-name">Import Riff account (.rfacc)</span>
+                    <span class="setting-name">Import Lumo account (.rfacc)</span>
                     <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Restore entire account from encrypted binary backup</span>
                   </div>
                 </div>
@@ -1747,7 +1933,7 @@
                     <div class="setting-item-top" style="align-items: center;">
                       <div style="display: flex; flex-direction: column; gap: 2px;">
                         <span class="setting-name">Allow multiple instances</span>
-                        <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">For testing: lets you start a second Riff window. Applies after restart. The second window uses its own clean profile.</span>
+                        <span style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">For testing: lets you start a second Lumo window. Applies after restart. The second window uses its own clean profile.</span>
                       </div>
                       <button class="effect-switch-btn" id="btn-multi-instance"><span class="thumb"></span></button>
                     </div>
@@ -1903,11 +2089,11 @@
                         <span>Spotify</span>
                       </button>
                       <button type="button" class="theme-mode-btn" id="home-layout-riff" style="display: inline-flex; align-items: center; justify-content: center; gap: 6px;">
-                        <img src="../../assets/icon.png" width="16" height="16" style="border-radius: 4px; object-fit: contain;" alt="">
-                        <span>Riff</span>
+                        <img src="../../assets/lumo.svg" width="16" height="16" style="border-radius: 4px; object-fit: contain;" alt="">
+                        <span>Lumo</span>
                       </button>
                     </div>
-                    <div style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline); margin-top: 6px;">Spotify: rows of mixes and quick access. Riff: the carousel.</div>
+                    <div style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline); margin-top: 6px;">Spotify: rows of mixes and quick access. Lumo: the carousel.</div>
                   </div>
 
                   <div class="setting-item">
@@ -1958,17 +2144,17 @@
                   <span class="riff-hero-logo-main"></span>
                 </div>
               </div>
-              <span class="riff-hero-title">Riff</span>
+              <span class="riff-hero-title">Lumo</span>
             </div>
             <div class="m3-group">
             <div class="setting-item">
               <div class="setting-item-top" style="align-items: center; justify-content: space-between;">
                 <div style="display: flex; align-items: center; gap: 12px;">
                   <div style="width: 32px; height: 32px; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center;">
-                    <img src="../../assets/icon.png" alt="Riff" style="width: 32px; height: 32px; object-fit: cover;">
+                    <img src="../../assets/lumo.svg" alt="Lumo" style="width: 32px; height: 32px; object-fit: cover;">
                   </div>
                   <div style="display: flex; flex-direction: column;">
-                    <span class="setting-name">Riff</span>
+                    <span class="setting-name">Lumo</span>
                     <span id="about-version" style="font-size: calc(12px * var(--font-scale, 1)); color: var(--md-sys-color-outline);">Version 43.0.0</span>
                   </div>
                 </div>
@@ -1998,17 +2184,6 @@
             </div>
             </div>
           </div>
-
-          <div class="settings-credits">
-            <span class="settings-credits-text">
-              <svg class="settings-credits-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm4.64 6.8c-.15 1.58-.8 5.42-1.13 7.19-.14.75-.42 1-.68 1.03-.58.05-1.02-.38-1.58-.75-.88-.58-1.38-.94-2.23-1.5-.99-.65-.35-1.01.22-1.59.15-.15 2.71-2.48 2.76-2.69a.2.2 0 0 0-.05-.18c-.06-.05-.14-.03-.21-.02-.09.02-1.49.95-4.22 2.79-.4.27-.76.41-1.08.4-.36-.01-1.04-.2-1.55-.37-.63-.2-1.12-.31-1.08-.66.02-.18.27-.36.75-.55 2.92-1.27 4.86-2.11 5.83-2.51 2.78-1.16 3.35-1.36 3.73-1.36.08 0 .27.02.39.12.1.08.13.19.14.27-.01.06.01.24 0 .4z"/>
-              </svg>
-              Riff made by rootless, support me: <a href="https://t.me/riffplayer" target="_blank" rel="noopener">t.me/riffplayer</a>
-            </span>
-            <span class="settings-version-tag">v43.0.0</span>
-          </div>
-            </div>
           </div>
         </div>
       </section>
@@ -2035,7 +2210,7 @@
             <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
           </div>
           <div class="vinyl-overlay hidden" id="vinyl-overlay"></div>
-          <button id="btn-right-panel-art" title="Change cover/banner for this track" aria-label="Change cover/banner for this track">
+          <button id="btn-right-panel-art" title="Change cover/banner for this track" aria-label="Change cover/banner for this track" style="display: none !important;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
           </button>
         </div>
@@ -2092,15 +2267,13 @@
       <button class="btn-icon-pill" id="btn-toggle-fav" title="Favorite">
         <svg id="fav-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"></path></svg>
       </button>
-      <button class="btn-icon-pill" id="btn-edit-current-track" title="Edit track title and artist">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+      <button class="btn-icon-pill" id="btn-playbar-dots" title="More options" aria-label="More options">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="2"></circle><circle cx="19" cy="12" r="2"></circle><circle cx="5" cy="12" r="2"></circle></svg>
       </button>
-      <button class="btn-icon-pill" id="btn-playbar-more" title="Download track">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z"/></svg>
+      <button class="btn-icon-pill" id="btn-playbar-more" title="Download track" aria-label="Download track" style="display:none;">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
       </button>
-      <button class="btn-icon-pill riff-share-action-btn" id="btn-playbar-share" title="Copy share link" aria-label="Copy share link">
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 14 20 9 15 4"></polyline><path d="M4 20v-7a4 4 0 0 1 4-4h12"></path></svg>
-      </button>
+      <button class="btn-icon-pill riff-share-action-btn" id="btn-playbar-share" title="Copy share link" aria-label="Copy share link" style="display:none;"></button>
     </div>
 
     <div class="playbar-center">
@@ -2125,7 +2298,10 @@
           <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2.5"></line></svg>
         </button>
         <button class="control-btn" id="btn-repeat" title="Repeat">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+          <span class="repeat-icon-wrap">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+            <span class="repeat-one-badge" aria-hidden="true">1</span>
+          </span>
         </button>
       </div>
 
@@ -2194,7 +2370,7 @@
       
       <div class="cache-header">
         <h2>Clear Cache</h2>
-        <p>Clear cache and free up your storage, don't do it too often because Riff will get laggy.</p>
+        <p>Clear cache and free up your storage, don't do it too often because Lumo will get laggy.</p>
       </div>
 
       <div class="cache-stats-container">
@@ -2592,7 +2768,7 @@
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
         </button>
       </div>
-      <p id="tools-modal-desc" style="margin: 0; color: var(--md-sys-color-on-surface-variant); font-size: calc(13px * var(--font-scale, 1)); line-height: 1.4;">Riff needs yt-dlp and ffmpeg to play and save tracks (~400 MB).</p>
+      <p id="tools-modal-desc" style="margin: 0; color: var(--md-sys-color-on-surface-variant); font-size: calc(13px * var(--font-scale, 1)); line-height: 1.4;">Lumo needs yt-dlp and ffmpeg to play and save tracks (~400 MB).</p>
 
       <div class="tools-list" style="display: flex; flex-direction: column; gap: 10px; margin-top: 6px;">
         <div class="tools-row" id="tools-row-ytdlp" style="background: var(--md-sys-color-surface-container); border-radius: var(--md-shape-corner-m); padding: 12px 16px; display: flex; flex-direction: column; gap: 8px;">
@@ -2749,7 +2925,7 @@
             <line x1="12" y1="9" x2="12" y2="13"></line>
             <line x1="12" y1="17" x2="12.01" y2="17"></line>
           </svg>
-          <span>We don't steal anything, and Riff is open-source. Want to import everything? Use the export files (or log in, if you set that up). Want zero risk? Import a single playlist by link instead.</span>
+          <span>We don't steal anything, and Lumo is open-source. Want to import everything? Use the export files (or log in, if you set that up). Want zero risk? Import a single playlist by link instead.</span>
         </div>
       </div>
       <div class="sp-pane hidden" data-mode="login">
@@ -2775,7 +2951,7 @@
             <line x1="12" y1="9" x2="12" y2="13"></line>
             <line x1="12" y1="17" x2="12.01" y2="17"></line>
           </svg>
-          <span>We don't steal anything, and Riff is open-source. Want to import everything? Use the export files (or log in, if you set that up). Want zero risk? Import a single playlist by link instead.</span>
+          <span>We don't steal anything, and Lumo is open-source. Want to import everything? Use the export files (or log in, if you set that up). Want zero risk? Import a single playlist by link instead.</span>
         </div>
       </div>
       <div id="spotify-import-progress-wrap" class="hidden" style="margin-bottom: 16px; display: flex; flex-direction: column; align-items: center; gap: 8px;">
@@ -2848,7 +3024,7 @@
             <line x1="12" y1="9" x2="12" y2="13"></line>
             <line x1="12" y1="17" x2="12.01" y2="17"></line>
           </svg>
-          <span>We don't steal anything, and Riff is open-source. Want to import everything? Use the export files. Want zero risk? Import a single playlist by link instead.</span>
+          <span>We don't steal anything, and Lumo is open-source. Want to import everything? Use the export files. Want zero risk? Import a single playlist by link instead.</span>
         </div>
       </div>
       <div id="apple-import-progress-wrap" class="hidden" style="margin-bottom: 16px; display: flex; flex-direction: column; align-items: center; gap: 8px;">
@@ -2935,7 +3111,7 @@
             <line x1="12" y1="9" x2="12" y2="13"></line>
             <line x1="12" y1="17" x2="12.01" y2="17"></line>
           </svg>
-          <span>We don't steal anything, and Riff is open-source. Want zero risk? Import a single playlist by link instead.</span>
+          <span>We don't steal anything, and Lumo is open-source. Want zero risk? Import a single playlist by link instead.</span>
         </div>
       </div>
       <div id="link-import-progress-wrap" class="hidden" style="margin-bottom: 16px; display: flex; flex-direction: column; align-items: center; gap: 8px;">
@@ -3244,6 +3420,7 @@
       <textarea class="custom-lyrics-textarea" id="custom-lyrics-textarea" placeholder="First line of the lyrics...&#10;Second line of the lyrics...&#10;&#10;Chorus starts here..."></textarea>
       <div class="dialog-actions">
         <button class="btn-outline-pill" id="btn-cancel-custom-lyrics">Cancel</button>
+        <button class="btn-outline-pill hidden" id="btn-reset-custom-lyrics" type="button">Reset lyrics</button>
         <button class="btn-pill-primary" id="btn-save-custom-lyrics">Save lyrics</button>
       </div>
     </div>
@@ -3439,6 +3616,9 @@
           </div>
         </div>
         <div class="tvk-controls" id="tvk-controls">
+          <button class="control-btn" id="btn-tvk-favorite" title="Like track" aria-label="Like track" aria-pressed="false">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21l7.8-7.5 1.1-1.1a5.5 5.5 0 0 0-.1-7.8Z"></path></svg>
+          </button>
           <button class="control-btn" id="btn-tvk-prev" title="Previous" aria-label="Previous">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="19 20 9 12 19 4 19 20"></polygon><line x1="5" y1="19" x2="5" y2="5" stroke="currentColor" stroke-width="2.5"></line></svg>
           </button>
@@ -3454,6 +3634,9 @@
           </div>
           <button class="control-btn" id="btn-tvk-next" title="Next" aria-label="Next">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2.5"></line></svg>
+          </button>
+          <button class="control-btn" id="btn-tvk-repost" title="Repost track" aria-label="Repost track">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
           </button>
         </div>
         <div class="tvk-progress-row" id="tvk-progress-row">
@@ -3508,6 +3691,140 @@
     </div>
   </div>
 
+  <div class="modal-backdrop hidden" id="pin-track-modal">
+    <div class="dialog-card" style="width: 440px; max-width: 92vw; display: flex; flex-direction: column; gap: 14px;">
+      <div class="dialog-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h3 style="margin: 0;">Select Favorite Song</h3>
+        <button class="btn-icon-pill" id="btn-close-pin-modal" type="button" title="Close">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div class="pin-tracks-picker-list" id="pin-tracks-picker-list" style="max-height: 360px; overflow-y: auto; display: flex; flex-direction: column; gap: 6px;"></div>
+      <div class="dialog-actions">
+        <button type="button" class="btn-outline-pill" id="btn-cancel-pin-modal">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="profile-edit-modal">
+    <div class="dialog-card" style="width: 440px; max-width: 92vw; display: flex; flex-direction: column; gap: 16px;">
+      <div class="dialog-header" style="display: flex; justify-content: space-between; align-items: center;">
+        <h3 style="margin: 0;" id="profile-modal-title">Edit Profile</h3>
+        <button class="btn-icon-pill" id="btn-close-profile-modal" type="button" title="Close">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div style="display: flex; align-items: center; gap: 16px;">
+          <div class="profile-avatar-wrap" id="modal-avatar-preview-wrap" style="width: 68px; height: 68px; font-size: 26px; position: relative; overflow: hidden; flex-shrink: 0;">
+            <img id="modal-avatar-preview-img" class="profile-avatar-img hidden" src="" alt="Preview">
+            <div class="profile-avatar-placeholder" id="modal-avatar-preview-initial">G</div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px;">
+            <label class="btn-outline-pill" style="cursor: pointer; padding: 6px 14px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; width: fit-content;">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              <span>Upload Avatar</span>
+              <input type="file" id="input-profile-avatar-file" accept="image/*" style="display: none;">
+            </label>
+            <button type="button" class="btn-text-error" id="btn-clear-profile-avatar" style="width:fit-content;padding:0;border:0;background:none;color:var(--md-sys-color-error);font-size:11px;cursor:pointer;">Remove avatar</button>
+            <span style="font-size: 11px; color: var(--md-sys-color-outline);">Custom photo from your device</span>
+          </div>
+        </div>
+        <div class="profile-edit-identity">
+          <label for="input-profile-nickname">Display Name</label>
+          <input type="text" id="input-profile-nickname" class="input-add-friend profile-edit-large-input" placeholder="How should people see you?" maxlength="50" style="width: 100%; max-width: none;" autocomplete="nickname">
+          <span id="profile-nick-error" style="font-size: 11px; color: var(--md-sys-color-error, #ff5252); display: none;"></span>
+        </div>
+        <div class="profile-edit-identity">
+          <label for="input-profile-username">Username</label>
+          <input type="text" id="input-profile-username" class="input-add-friend profile-edit-large-input" readonly aria-readonly="true">
+          <small>Your sign-in name cannot be changed.</small>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px;">
+          <label style="font-size: 12px; font-weight: 600; color: var(--md-sys-color-on-surface-variant);">Bio / Description</label>
+          <textarea id="input-profile-bio" rows="3" style="width: 100%; border-radius: 12px; padding: 10px 14px; background: var(--md-sys-color-surface-container); border: 1px solid var(--md-sys-color-outline-variant); color: var(--md-sys-color-on-surface); font-family: inherit; font-size: 13px; resize: none; outline: none; box-sizing: border-box;" placeholder="Tell people about yourself or music taste..."></textarea>
+        </div>
+        <div class="profile-artist-search-field" style="display:flex;flex-direction:column;gap:4px;">
+          <label for="input-profile-genres" style="font-size:12px;font-weight:600;color:var(--md-sys-color-on-surface-variant);">Favorite artist</label>
+          <input type="text" id="input-profile-genres" class="input-add-friend profile-edit-large-input" maxlength="100" placeholder="Search artists by name..." style="width:100%;max-width:none;">
+          <div id="profile-artist-suggestions" class="friend-autocomplete-dropdown hidden"></div>
+        </div>
+      </div>
+      <div class="dialog-actions" style="display: flex; justify-content: flex-end; align-items: center; gap: 10px;">
+        <button type="button" class="btn-text-error" id="btn-logout-profile" style="margin-right: auto; padding: 6px 12px; font-size: 13px; color: var(--md-sys-color-error, #ff5252); background: none; border: none; cursor: pointer;">Log Out</button>
+        <button type="button" class="btn-outline-pill" id="btn-cancel-profile-modal">Cancel</button>
+        <button type="button" class="btn-pill-primary" id="btn-save-profile">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden profile-auth-screen" id="profile-register-modal">
+    <div class="dialog-card profile-auth-card">
+      <div class="dialog-header">
+        <h3 style="margin: 0;" id="register-modal-title">Create your account</h3>
+        <button class="btn-icon-pill" id="btn-close-register-modal" type="button" title="Close" aria-label="Close">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <p class="profile-auth-description" id="auth-screen-description">Create an account with your display name, username and password.</p>
+      <div class="profile-auth-mode-switch" role="tablist" aria-label="Account access">
+        <button type="button" class="profile-auth-mode active" data-auth-mode="register" role="tab" aria-selected="true">Register</button>
+        <button type="button" class="profile-auth-mode" data-auth-mode="login" role="tab" aria-selected="false">Log In</button>
+      </div>
+      <div class="profile-auth-fields">
+        <div class="profile-auth-field" id="auth-display-name-field">
+          <label for="input-register-display-name">Display Name</label>
+          <input type="text" id="input-register-display-name" placeholder="How should people see you?" autocomplete="nickname" maxlength="50">
+        </div>
+        <div class="profile-auth-field" id="auth-username-field">
+          <label for="input-register-nickname" id="auth-username-label">Username</label>
+          <input type="text" id="input-register-nickname" placeholder="Username" autocomplete="username" maxlength="32">
+        </div>
+        <div class="profile-auth-field" id="auth-password-field">
+          <label for="input-register-password" id="auth-password-label">Password</label>
+          <div class="auth-password-input-wrap">
+            <input type="password" id="input-register-password" placeholder="At least 8 characters" autocomplete="new-password" maxlength="128">
+            <button type="button" class="auth-password-toggle" data-password-toggle="input-register-password" aria-label="Show password" title="Show password">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="profile-auth-field hidden" id="auth-repeat-password-field">
+          <label for="input-register-password-confirm" id="auth-repeat-label">Repeat password</label>
+          <div class="auth-password-input-wrap">
+            <input type="password" id="input-register-password-confirm" placeholder="Repeat your password" autocomplete="new-password" maxlength="128">
+            <button type="button" class="auth-password-toggle" data-password-toggle="input-register-password-confirm" aria-label="Show password" title="Show password">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="profile-auth-field hidden" id="auth-verification-field">
+          <label for="input-register-code" id="auth-code-label">Telegram verification code</label>
+          <input type="text" id="input-register-code" placeholder="6-digit code" inputmode="numeric" autocomplete="one-time-code" maxlength="6">
+        </div>
+        <span id="register-nick-error" class="profile-auth-error" role="alert" aria-live="polite"></span>
+      </div>
+      <div class="profile-auth-forgot-row">
+        <button type="button" id="btn-forgot-password" class="profile-auth-forgot hidden">Forgot password?</button>
+      </div>
+      <div class="dialog-actions profile-auth-actions">
+        <button type="button" class="btn-outline-pill" id="btn-cancel-register-modal">Cancel</button>
+        <button type="button" class="btn-outline-pill hidden" id="btn-resend-auth-code">Resend code</button>
+        <button type="button" class="btn-pill-primary" id="btn-submit-register">Send code</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="owner-tools-modal">
+    <div class="dialog-card owner-tools-card">
+      <div class="dialog-header"><h3 style="margin:0;">Owner tools</h3><button class="btn-icon-pill" id="btn-close-owner-tools" type="button" aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m18 6-12 12M6 6l12 12"/></svg></button></div>
+      <p class="profile-auth-description">Find an account and manage its community badges.</p>
+      <label class="owner-tools-search-label" for="owner-tools-search">Search by username or display name</label>
+      <input id="owner-tools-search" class="input-add-friend profile-edit-large-input" placeholder="Search users…" autocomplete="off">
+      <div id="owner-tools-results" class="owner-tools-results"><div class="owner-tools-empty">Type at least 2 characters to search.</div></div>
+    </div>
+  </div>
+
   <div class="toast-container" id="toast-container"></div>
 
   <div id="css-editor" class="css-editor hidden">
@@ -3532,6 +3849,14 @@
     <button type="button" class="btn-pill-primary" id="multi-select-done">Done</button>
   </div>
 
+  <script src="../../node_modules/@supabase/supabase-js/dist/umd/supabase.js"></script>
+  <script>
+    window.lumoSupabase = window.supabase.createClient(
+      'https://hlhbuepsuekfrdrhnwpk.supabase.co',
+      'sb_publishable_PMA0r5Q3bbevEvTJPdcYyw_dqkYxRBr',
+      { auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false } }
+    );
+  </script>
   <script src="../../assets/hls.min.js"></script>
   <script src="audio.js"></script>
   <script src="shapes.js"></script>
@@ -3540,3 +3865,7 @@
   <script src="app.js"></script>
 </body>
 </html>
+
+
+
+

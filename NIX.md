@@ -1,10 +1,10 @@
-# Riff on Nix
+# Lumo on Nix
 
 The `flake.nix` exposes three things:
 
-- `packages.riff` (also `packages.default`) — the installable app
+- `packages.lumo` (also `packages.default`) — the installable app
 - `overlays.default` — an overlay for nixpkgs
-- `devShells.default` — a shell for hacking on Riff
+- `devShells.default` — a shell for hacking on Lumo
 
 ## Install into your system config (Flakes)
 
@@ -14,15 +14,15 @@ Add the input:
 {
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    riff.url = "github:rootscripts/riff";
+    lumo.url = "github:rootscripts/riff";
   };
 
-  outputs = { self, nixpkgs, riff, ... }: {
+  outputs = { self, nixpkgs, lumo, ... }: {
     nixosConfigurations.myhost = nixpkgs.lib.nixosSystem {
       system = "x86_64-linux";
       modules = [
         ({ pkgs, ... }: {
-          environment.systemPackages = [ riff.packages.x86_64-linux.default ];
+          environment.systemPackages = [ lumo.packages.x86_64-linux.default ];
         })
       ];
     };
@@ -34,14 +34,14 @@ For home-manager, inside your home config:
 
 ```nix
 {
-  inputs.riff.url = "github:rootscripts/riff";
+  inputs.lumo.url = "github:rootscripts/riff";
 
-  outputs = { nixpkgs, home-manager, riff, ... }: {
+  outputs = { nixpkgs, home-manager, lumo, ... }: {
     homeConfigurations.you = home-manager.lib.homeManagerConfiguration {
       pkgs = nixpkgs.legacyPackages.x86_64-linux;
       modules = [
         ({ pkgs, ... }: {
-          home.packages = [ riff.packages.x86_64-linux.default ];
+          home.packages = [ lumo.packages.x86_64-linux.default ];
         })
       ];
     };
@@ -51,23 +51,23 @@ For home-manager, inside your home config:
 
 ## Install via an overlay
 
-Useful when you want `pkgs.riff` available everywhere rather than referencing `riff.packages...` directly:
+Useful when you want `pkgs.lumo` available everywhere rather than referencing `lumo.packages...` directly:
 
 ```nix
 {
-  inputs.riff.url = "github:rootscripts/riff";
+  inputs.lumo.url = "github:rootscripts/riff";
 
-  outputs = { nixpkgs, riff, ... }:
+  outputs = { nixpkgs, lumo, ... }:
     let
       system = "x86_64-linux";
       pkgs = import nixpkgs {
         inherit system;
-        overlays = [ riff.overlays.default ];
+        overlays = [ lumo.overlays.default ];
       };
     in {
       nixosConfigurations.myhost = pkgs.lib.nixosSystem {
         inherit system;
-        modules = [{ environment.systemPackages = [ pkgs.riff ]; }];
+        modules = [{ environment.systemPackages = [ pkgs.lumo ]; }];
       };
     };
 }
@@ -87,7 +87,7 @@ nix profile install .
 nix run .
 ```
 
-After installing, `riff` is on your `PATH` and a `Riff` desktop entry + icon are registered.
+After installing, `lumo` is on your `PATH` and a `Lumo` desktop entry + icon are registered.
 
 ## Development shell
 
@@ -101,5 +101,5 @@ npm start
 
 ## Notes
 
-- The package wraps the nixpkgs `electron` with the app directory and puts `yt-dlp` and `ffmpeg` on `PATH`, so Riff finds them instead of self-downloading.
+- The package wraps the nixpkgs `electron` with the app directory and puts `yt-dlp` and `ffmpeg` on `PATH`, so Lumo finds them instead of self-downloading.
 - `npmDepsHash` in `flake.nix` must be updated whenever `package.json`/`package-lock.json` change. Rebuild with a wrong/placeholder hash and copy the reported `got:` value, or regenerate it with `nix-prefetch-npm-deps` / `prefetch-npm-deps`.

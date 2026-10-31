@@ -11714,7 +11714,7 @@ body.is-mobile .sidebar {
   border-left: none !important;
   border-bottom: none !important;
   border-radius: 0 !important;
-  z-index: 2500 !important;
+  z-index: 1500 !important;
   display: flex !important;
   flex-direction: row !important;
   align-items: center !important;
@@ -11784,7 +11784,7 @@ body.is-mobile .playbar {
   position: fixed !important;
   left: 10px !important;
   right: 10px !important;
-  bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 8px) !important;
+  bottom: calc(66px + env(safe-area-inset-bottom, 0px)) !important;
   top: auto !important;
   width: auto !important;
   height: 58px !important;
@@ -12010,17 +12010,53 @@ body.is-mobile .settings-nav-btn {
 }
 
 /* 9. FULLSCREEN LYRICS / FULL PLAYER MODAL ON MOBILE */
-body.is-mobile .right-panel {
+:is(html.is-mobile, body.is-mobile) .right-panel.hidden,
+:is(html.is-mobile, body.is-mobile) .right-panel:not(.mobile-open) {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  transform: translateY(100%) !important;
+}
+
+:is(html.is-mobile, body.is-mobile) .right-panel.mobile-open:not(.hidden) {
+  display: flex !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
   position: fixed !important;
   inset: 0 !important;
-  width: 100% !important;
-  height: 100% !important;
+  width: 100vw !important;
+  height: 100vh !important;
   height: 100dvh !important;
-  z-index: 3000 !important;
-  background: var(--md-sys-color-surface) !important;
-  padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px) 16px !important;
+  z-index: 4000 !important;
+  background: var(--md-sys-color-surface, #141318) !important;
+  padding: calc(env(safe-area-inset-top, 0px) + 16px) 18px calc(env(safe-area-inset-bottom, 0px) + 20px) 18px !important;
   box-sizing: border-box !important;
   flex-direction: column !important;
+  animation: mobileSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+@keyframes mobileSlideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+:is(html.is-mobile, body.is-mobile) #btn-close-right-panel {
+  width: 38px !important;
+  height: 38px !important;
+  min-width: 38px !important;
+  min-height: 38px !important;
+  border-radius: 50% !important;
+  background: var(--md-sys-color-surface-container-high, rgba(255, 255, 255, 0.12)) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  opacity: 1 !important;
+  cursor: pointer !important;
+}
+
+:is(html.is-mobile, body.is-mobile) #btn-close-right-panel svg {
+  width: 18px !important;
+  height: 18px !important;
 }
 
 /* 10. SCRUBBER TRACK TOUCH ACTION */
@@ -12029,4 +12065,54 @@ body.is-mobile .right-panel {
   touch-action: none !important;
   user-select: none !important;
   -webkit-user-select: none !important;
+}
+
+
+:is(html.is-mobile, body.is-mobile) .right-panel.hidden,
+:is(html.is-mobile, body.is-mobile) .right-panel:not(.mobile-open) {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  transform: translateY(100%) !important;
+}
+
+:is(html.is-mobile, body.is-mobile) .right-panel.mobile-open:not(.hidden) {
+  display: flex !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  z-index: 4000 !important;
+  background: var(--md-sys-color-surface, #141318) !important;
+  padding: calc(env(safe-area-inset-top, 0px) + 16px) 18px calc(env(safe-area-inset-bottom, 0px) + 20px) 18px !important;
+  box-sizing: border-box !important;
+  flex-direction: column !important;
+  animation: mobileSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+@keyframes mobileSlideUp {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+:is(html.is-mobile, body.is-mobile) #btn-close-right-panel {
+  width: 38px !important;
+  height: 38px !important;
+  min-width: 38px !important;
+  min-height: 38px !important;
+  border-radius: 50% !important;
+  background: var(--md-sys-color-surface-container-high, rgba(255, 255, 255, 0.12)) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  opacity: 1 !important;
+  cursor: pointer !important;
+}
+
+:is(html.is-mobile, body.is-mobile) #btn-close-right-panel svg {
+  width: 18px !important;
+  height: 18px !important;
 }

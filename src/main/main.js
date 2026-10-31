@@ -388,6 +388,7 @@ function runGUI() {
   }
 
   async function createWindow() {
+    const isMobilePreview = process.argv.includes('--mobile') || process.env.LUMO_MOBILE === '1';
     serverPort = await startServer(PORT);
     const firstRun = !tutorialDone();
     const initialBounds = getResponsiveWindowBounds();
@@ -400,12 +401,12 @@ function runGUI() {
     mainWindow = new BrowserWindow({
       x: initialBounds.x,
       y: initialBounds.y,
-      width: initialBounds.width,
-      height: initialBounds.height,
-      minWidth: 800,
-      minHeight: 540,
+      width: isMobilePreview ? 390 : initialBounds.width,
+      height: isMobilePreview ? 844 : initialBounds.height,
+      minWidth: isMobilePreview ? 320 : 800,
+      minHeight: isMobilePreview ? 480 : 540,
                                    backgroundColor: firstRun ? '#8d5ef2' : '#000000',
-                                   title: 'Lumo',
+                                   title: isMobilePreview ? 'Lumo (Mobile Preview)' : 'Lumo',
                                    icon: APP_ICON,
                                    frame: false,
                                    titleBarStyle: 'hidden',
@@ -424,7 +425,7 @@ function runGUI() {
 
     try { mainWindow.setIcon(APP_ICON); } catch (_) {}
 
-    if (savedState?.isMaximized) {
+    if (!isMobilePreview && savedState?.isMaximized) {
       mainWindow.maximize();
     }
 
@@ -433,7 +434,15 @@ function runGUI() {
       mainWindow.show();
     });
 
-    mainWindow.loadFile(path.join(__dirname, '../renderer', firstRun ? 'welcome.html' : 'index.html'));
+    if (isMobilePreview) {
+      try {
+        mainWindow.webContents.setUserAgent('Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36 LumoMobile');
+      } catch (_) {}
+      mainWindow.webContents.on('did-finish-load', () => {
+        mainWindow.webContents.executeJavaScript('window.isMobile = true; document.documentElement.classList.add("is-mobile", "hide-titlebar"); document.body.classList.add("is-mobile", "hide-titlebar");').catch(() => {});
+      });
+    }
+    mainWindow.loadFile(path.join(__dirname, '../renderer', (firstRun && !isMobilePreview) ? 'welcome.html' : 'index.html'));
     if (firstRun) {
       ipcMain.removeAllListeners('welcome-finish');
       ipcMain.once('welcome-finish', (e, detail) => {
@@ -2420,7 +2429,7 @@ function runGUI() {
             mainWindow?.webContents.send('media-control', 'volume-down');
           });
         } catch (e) {}
-        if (tutorialDone()) require('./updater').initUpdater(() => mainWindow);
+        require('./updater').initUpdater(() => mainWindow);
         app.on('activate', () => {
           if (BrowserWindow.getAllWindows().length === 0) createWindow();
           else showAndFocusWindow();

@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>Lumo</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="styles.css">
   <script>
     (function() {
-      if (window.isCapacitorApp || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+      if (window.isCapacitorApp || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.location.search.includes('mobile=1')) {
         window.isMobile = true;
         document.documentElement.classList.add('is-mobile', 'hide-titlebar');
         if (document.body) document.body.classList.add('is-mobile', 'hide-titlebar');
@@ -2200,7 +2200,7 @@
       </section>
     </main>
 
-    <aside class="right-panel lyrics-empty" id="right-panel">
+    <aside class="right-panel lyrics-empty hidden" id="right-panel">
       <div class="panel-resize-edge" id="panel-resize-edge"></div>
       <div class="right-panel-banner" id="right-panel-banner"><div class="banner-image"></div></div>
       <div class="right-panel-header">

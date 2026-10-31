@@ -1,6 +1,6 @@
 {
   "name": "lumo",
-  "version": "44.0.9",
+  "version": "44.0.10",
   "main": "src/main/main.js",
   "bin": {
     "lumo": "src/main/cli.js"
@@ -16,7 +16,9 @@
     "release:minor": "npm version minor && git push --follow-tags",
     "release:major": "npm version major && git push --follow-tags",
     "build:mobile": "node scripts/build-mobile.js && node scripts/copy-android-icons.js && npx cap sync android",
-    "android:build": "npm run build:mobile && cd android && ./gradlew assembleDebug"
+    "android:build": "npm run build:mobile && cd android && ./gradlew assembleDebug",
+    "mobile": "node scripts/start-mobile.js",
+    "mobile:preview": "node scripts/start-mobile.js"
   },
   "keywords": [],
   "author": "Oxeez",

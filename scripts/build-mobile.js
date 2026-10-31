@@ -50,6 +50,12 @@ html = html.replace(/\.\.\/\.\.\/node_modules\/@supabase\/supabase-js\/dist\/umd
 // Remove desktop titlebar HTML entirely on mobile
 html = html.replace(/<header class="titlebar"[^>]*>[\s\S]*?<\/header>/i, '');
 
+// Ensure right-panel is strictly hidden on mobile launch
+html = html.replace(/<aside class="right-panel[^"]*"/i, '<aside class="right-panel lyrics-empty hidden"');
+
+// Ensure root html has is-mobile hide-titlebar
+html = html.replace(/<html lang="en"[^>]*>/i, '<html lang="en" class="is-mobile hide-titlebar">');
+
 // Add mobile viewport, safe-area meta, and bulletproof electronAPI shim
 const mobileHeaderShim = `<head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">

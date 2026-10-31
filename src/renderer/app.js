@@ -719,7 +719,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     vibeTracks: [],
     _isNaturalEnding: false,
     _skipRecordedFor: null,
-    isRightPanelOpen: true,
+    isRightPanelOpen: false,
     lyricsMode: 'word',
     uiScale: savedScale,
     activePresetId: soundPersistenceEnabled ? (localStorage.getItem('lumo_active_preset') || 'p_default') : 'p_default',
@@ -14899,7 +14899,10 @@ function updateNavIndicator(animate) {
   if (el.btnToggleLyricsPanel) {
     el.btnToggleLyricsPanel.addEventListener('click', () => {
       state.isRightPanelOpen = !state.isRightPanelOpen;
-      if (el.rightPanel) el.rightPanel.classList.toggle('hidden', !state.isRightPanelOpen);
+      if (el.rightPanel) {
+        el.rightPanel.classList.toggle('hidden', !state.isRightPanelOpen);
+        el.rightPanel.classList.toggle('mobile-open', state.isRightPanelOpen);
+      }
       el.btnToggleLyricsPanel.classList.toggle('active', state.isRightPanelOpen);
       if (state.isRightPanelOpen) {
         updateLyricsPadding();
@@ -14932,7 +14935,10 @@ function updateNavIndicator(animate) {
   if (el.btnCloseRightPanel) {
     el.btnCloseRightPanel.addEventListener('click', () => {
       state.isRightPanelOpen = false;
-      if (el.rightPanel) el.rightPanel.classList.add('hidden');
+      if (el.rightPanel) {
+        el.rightPanel.classList.add('hidden');
+        el.rightPanel.classList.remove('mobile-open');
+      }
       if (el.btnToggleLyricsPanel) el.btnToggleLyricsPanel.classList.remove('active');
       setTimeout(resizeCanvases, 150);
     });
@@ -18516,6 +18522,11 @@ function bindCoverHoldZoom(wrapEl) {
       if (document.body) {
         document.body.classList.remove('mini', 'mini-lyrics-on');
         document.body.classList.add('is-mobile', 'hide-titlebar');
+        state.isRightPanelOpen = false;
+        if (el.rightPanel) {
+          el.rightPanel.classList.add('hidden');
+          el.rightPanel.classList.remove('mobile-open');
+        }
       }
       return;
     }
@@ -19266,6 +19277,7 @@ function bindCoverHoldZoom(wrapEl) {
             releaseNotes: releaseNotes || 'Bug fixes, playback improvements, and UI polish.',
             publishedAt: publishedAt || '',
             htmlUrl: fallbackReleaseUrl,
+            downloadUrl: 'https://github.com/Shadow671488/lumo/releases/download/v' + latestVersion + '/Lumo-' + latestVersion + '-win-x64.exe',
             canInstall: canNativeInstall
           };
           populateOtaUpdateSheet(latestUpdateInfo);
@@ -19374,8 +19386,9 @@ function bindCoverHoldZoom(wrapEl) {
         restoreButton();
         if (isWaitingToRestart) {
           isWaitingToRestart = false;
-          if (latestUpdateInfo?.htmlUrl) {
-            window.open(latestUpdateInfo.htmlUrl, '_blank');
+          const targetUrl = latestUpdateInfo?.downloadUrl || latestUpdateInfo?.htmlUrl;
+          if (targetUrl) {
+            window.open(targetUrl, '_blank');
           } else {
             try {
               if (window.electronAPI && window.electronAPI.installUpdateNow) {

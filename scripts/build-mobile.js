@@ -47,12 +47,36 @@ let html = fs.readFileSync(indexHtmlPath, 'utf8');
 html = html.replace(/\.\.\/\.\.\/assets\//g, './assets/');
 html = html.replace(/\.\.\/\.\.\/node_modules\/@supabase\/supabase-js\/dist\/umd\/supabase\.js/g, './assets/supabase.js');
 
-// Add mobile viewport and safe-area meta if not present
+// Add mobile viewport, safe-area meta, and bulletproof electronAPI shim
+const mobileHeaderShim = `<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <script>
+    window.isCapacitorApp = true;
+    window.isMobile = true;
+    if (!window.electronAPI) {
+      window.electronAPI = new Proxy({}, {
+        get: (target, prop) => {
+          if (prop === 'isMobile') return true;
+          if (prop === 'isCapacitor') return true;
+          if (prop === 'platform') return 'android';
+          if (prop === 'serverPort') return null;
+          if (prop === 'serverToken') return '';
+          if (typeof target[prop] !== 'undefined') return target[prop];
+          return (...args) => {
+            if (typeof prop === 'string' && (prop.startsWith('get') || prop.startsWith('fetch') || prop.startsWith('check'))) {
+              return Promise.resolve(null);
+            }
+            return undefined;
+          };
+        }
+      });
+    }
+  </script>`;
+
 if (!html.includes('viewport-fit=cover')) {
-  html = html.replace(
-    /<head>/i,
-    `<head>\n  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">\n  <meta name="mobile-web-app-capable" content="yes">\n  <meta name="apple-mobile-web-app-capable" content="yes">\n  <script>window.isCapacitorApp = true; window.isMobile = true;</script>`
-  );
+  html = html.replace(/<head>/i, mobileHeaderShim);
 }
 
 // Add is-mobile and hide-titlebar classes to body

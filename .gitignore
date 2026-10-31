@@ -1,5 +1,9 @@
 node_modules/
 dist/
+www/
+android/app/build/
+android/.gradle/
+android/build/
 src/storage.json
 bin/yt-dlp
 bin/yt-dlp.exe

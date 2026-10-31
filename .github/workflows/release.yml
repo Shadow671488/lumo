@@ -18,7 +18,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "$GITHUB_REF_NAME" --generate-notes
 
-  build:
+  build-windows:
     needs: create-release
     runs-on: windows-latest
     steps:
@@ -31,9 +31,51 @@ jobs:
         shell: bash
         run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
       - run: npm ci
-      - name: Build and upload to the release
+      - name: Build and upload Windows release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: "false"
         run: npx electron-builder --win --publish always
+
+  build-android:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+      - name: Set version from tag
+        run: npm version "${GITHUB_REF_NAME#v}" --no-git-tag-version --allow-same-version
+      - run: npm ci
+      - name: Build mobile assets & sync
+        run: |
+          node scripts/build-mobile.js
+          node scripts/copy-android-icons.js
+          npx cap sync android
+      - name: Build Android APK
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --stacktrace
+      - name: Upload APK to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          apk_path=$(find android/app/build/outputs/apk/ -name "*.apk" | head -n 1)
+          if [ -n "$apk_path" ] && [ -f "$apk_path" ]; then
+            out_name="Lumo-${GITHUB_REF_NAME#v}-android.apk"
+            cp "$apk_path" "./$out_name"
+            gh release upload "$GITHUB_REF_NAME" "./$out_name" --clobber
+            echo "Successfully uploaded $out_name to GitHub Release!"
+          else
+            echo "ERROR: No APK found to upload!"
+            exit 1
+          fi

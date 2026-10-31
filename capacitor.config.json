@@ -1,0 +1,12 @@
+{
+  "appId": "com.lumo.player",
+  "appName": "Lumo",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}

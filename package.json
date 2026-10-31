@@ -1,6 +1,6 @@
 {
   "name": "lumo",
-  "version": "44.0.5",
+  "version": "44.0.6",
   "main": "src/main/main.js",
   "bin": {
     "lumo": "src/main/cli.js"

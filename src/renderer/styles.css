@@ -11636,6 +11636,8 @@ html.is-mobile {
   margin: 0 !important;
   padding: 0 !important;
   box-sizing: border-box !important;
+  background: #121214 !important;
+  background-color: #121214 !important;
 }
 
 body.is-mobile {
@@ -11643,6 +11645,8 @@ body.is-mobile {
   height: 100dvh !important;
   overflow: hidden !important;
   touch-action: pan-y !important;
+  background: #121214 !important;
+  background-color: #121214 !important;
   -webkit-touch-callout: none !important;
   -webkit-tap-highlight-color: transparent !important;
   user-select: none !important;

@@ -207,7 +207,7 @@ function cacheSet(map, key, value, max = MAX_CACHE_ENTRIES) {
 
 let currentAppState = {};
 const sseClients = new Set();
-const YT_PLAYER_CLIENTS = ['android', 'tv', 'web_safari', 'ios', null];
+const YT_PLAYER_CLIENTS = ['web_safari', 'web_creator', 'tv', 'android', 'ios', null];
 let lastGoodYtClient = null;
 
 let _bgYtDlpActive = 0;

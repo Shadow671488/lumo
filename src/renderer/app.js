@@ -875,8 +875,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // Helper to format track nicely
     function cleanTrackMeta(rawTitle, rawAuthor, videoId, lengthSec) {
-      let title = String(rawTitle || rawAuthor || 'Unknown Track').trim();
-      let artist = String(rawAuthor || 'Unknown Artist').trim();
+      let title = (rawTitle && rawTitle !== 'undefined') ? String(rawTitle).trim() : '';
+      let artist = (rawAuthor && rawAuthor !== 'undefined') ? String(rawAuthor).trim() : 'Unknown Artist';
+      if (!title) title = artist || 'Unknown Track';
       if (title.includes(' - ')) {
         const parts = title.split(' - ');
         if (parts[0] && parts[1]) {
@@ -896,34 +897,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       };
     }
 
-    // 2. Standalone mobile search provider A: Invidious
-    const invidiousInstances = ['https://yt.chocolatemoo53.com'];
-    for (const base of invidiousInstances) {
-      try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 4000);
-        const resp = await fetch(base + '/api/v1/search?q=' + cleanQ + '&type=video', { signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (resp.ok) {
-          const list = await resp.json();
-          if (Array.isArray(list) && list.length > 0) {
-            const validVideos = list.filter(item => item && item.videoId && (item.title || item.author));
-            if (validVideos.length > 0) {
-              const tracks = validVideos.slice(0, limit).map(item => cleanTrackMeta(item.title, item.author, item.videoId, item.lengthSeconds));
-              return { success: true, tracks };
-            }
-          }
-        }
-      } catch (_) {}
-    }
-
-    // 3. Standalone mobile search provider B: iTunes API (Fast, 100% reliable, high-res covers & previews)
+    // 2. Standalone mobile search: iTunes API first (Instant 250ms response, guaranteed HD 600x600 covers, pristine titles/artists)
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
-      const itunesResp = await fetch('https://itunes.apple.com/search?term=' + cleanQ + '&entity=song&limit=' + limit, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (itunesResp.ok) {
+      const itunesTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000));
+      const itunesFetch = fetch('https://itunes.apple.com/search?term=' + cleanQ + '&entity=song&limit=' + limit);
+      const itunesResp = await Promise.race([itunesFetch, itunesTimeout]);
+      if (itunesResp && itunesResp.ok) {
         const itData = await itunesResp.json();
         const results = Array.isArray(itData.results) ? itData.results : [];
         if (results.length > 0) {
@@ -942,6 +921,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
     } catch (_) {}
+
+    // 3. Fallback mobile search provider: Invidious YouTube tracks
+    const invidiousInstances = ['https://yt.chocolatemoo53.com'];
+    for (const base of invidiousInstances) {
+      try {
+        const invTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 2500));
+        const invFetch = fetch(base + '/api/v1/search?q=' + cleanQ + '&type=video');
+        const resp = await Promise.race([invFetch, invTimeout]);
+        if (resp && resp.ok) {
+          const list = await resp.json();
+          if (Array.isArray(list) && list.length > 0) {
+            const validVideos = list.filter(item => item && item.videoId && (item.title || item.author));
+            if (validVideos.length > 0) {
+              const tracks = validVideos.slice(0, limit).map(item => cleanTrackMeta(item.title, item.author, item.videoId, item.lengthSeconds));
+              return { success: true, tracks };
+            }
+          }
+        }
+      } catch (_) {}
+    }
 
     // 4. Standalone fallback: Curated Starter Tracks
     const starterTracks = typeof getStarterCuratedTracks === 'function' ? getStarterCuratedTracks() : [];
@@ -4345,7 +4344,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       el.nativeAudio.preload = 'auto';
 
       if (data.isHls && window.Hls && Hls.isSupported()) {
-        hlsInstance = new Hls({ enableWorker: true, lowLatencyMode: true, maxBufferLength: 30, maxMaxBufferLength: 60, maxBufferSize: 30 * 1000 * 1000 });
+        hlsInstance = new Hls({ enableWorker: true, lowLatencyMode: false, startPosition: 0, backBufferLength: 90, maxBufferLength: 60, maxMaxBufferLength: 120, maxBufferSize: 60 * 1000 * 1000 });
         hlsInstance.on(Hls.Events.ERROR, (_, errData) => {
           if (errData && errData.fatal) {
             if (errData.type === Hls.ErrorTypes.NETWORK_ERROR) hlsInstance.startLoad();
@@ -7535,6 +7534,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (_) {}
     }
 
+    if (state.isTrackLoading) {
+      frozenCurTime = 0;
+      state.isTrackLoading = false;
+    }
+    if (audioEngine && audioEngine.masterGain && audioEngine.ctx) {
+      try {
+        const ct = audioEngine.ctx.currentTime;
+        audioEngine.masterGain.gain.cancelScheduledValues(ct);
+        const targetVol = (audioEngine.isMuted ? 0 : 1) * (Number.isFinite(audioEngine.audioSettings?.volume) ? audioEngine.audioSettings.volume : 1.0);
+        audioEngine.masterGain.gain.setValueAtTime(targetVol, ct);
+      } catch (_) {}
+    }
     if (el.nativeAudio) {
       if (frozenCurTime > 0 && el.nativeAudio.currentTime === 0 && Number.isFinite(frozenCurTime)) {
         try {
@@ -7824,7 +7835,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                 if (state.playbackLoadTimeout) { clearTimeout(state.playbackLoadTimeout); state.playbackLoadTimeout = null; }
                 if (hlsInstance) { hlsInstance.destroy(); hlsInstance = null; }
                 if (streamData.isHls && window.Hls && Hls.isSupported()) {
-                  hlsInstance = new Hls({ enableWorker: true, lowLatencyMode: true });
+                  hlsInstance = new Hls({ enableWorker: true, lowLatencyMode: false, startPosition: 0, backBufferLength: 90, maxBufferLength: 60, maxMaxBufferLength: 120, maxBufferSize: 60 * 1000 * 1000 });
                   hlsInstance.loadSource(streamData.streamUrl);
                   hlsInstance.attachMedia(el.nativeAudio);
                   hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => { if (loadToken === state.loadToken) playSmooth(); });
@@ -7994,12 +8005,32 @@ document.addEventListener('DOMContentLoaded', async () => {
         playSmooth();
       } else {
         const expectedDur = getReliableTrackDuration();
-        const pos = el.nativeAudio.currentTime || 0;
-        if (state.currentTrack && state.currentTrack.platform !== 'local' && expectedDur > 25 && pos > 2 && pos < expectedDur - 12 && (state._streamRecoverCount || 0) < 2) {
+        const pos = (el.nativeAudio && Number.isFinite(el.nativeAudio.currentTime)) ? el.nativeAudio.currentTime : 0;
+        if (state.currentTrack && expectedDur > 25 && pos > 2 && pos < expectedDur - 12 && (state._streamRecoverCount || 0) < 3) {
           state._streamRecoverCount = (state._streamRecoverCount || 0) + 1;
-          el.nativeAudio.currentTime = pos;
-          playSmooth();
-          return;
+          console.warn('[Playback] Premature stream end detected at ' + pos.toFixed(1) + 's / ' + expectedDur.toFixed(1) + 's (recovery ' + state._streamRecoverCount + ')');
+          if (hlsInstance) {
+            try {
+              hlsInstance.startLoad(pos);
+              playSmooth();
+              return;
+            } catch (_) {}
+          }
+          const savedPos = pos;
+          const currentSrc = el.nativeAudio.currentSrc || el.nativeAudio.src;
+          if (currentSrc) {
+            try {
+              el.nativeAudio.src = currentSrc;
+              const onRecoverCanPlay = () => {
+                el.nativeAudio.removeEventListener('canplay', onRecoverCanPlay);
+                try { el.nativeAudio.currentTime = savedPos; } catch (_) {}
+                playSmooth();
+              };
+              el.nativeAudio.addEventListener('canplay', onRecoverCanPlay, { once: true });
+              el.nativeAudio.load();
+              return;
+            } catch (_) {}
+          }
         }
         state._isNaturalEnding = true;
         try {
@@ -8043,7 +8074,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       state.seekingProgress = undefined;
       // Keep the paused resume position in sync with manual seeks. Otherwise
       // playSmooth() can restore the position captured when pause was pressed.
-      if (!state.isPlaying && Number.isFinite(el.nativeAudio.currentTime)) {
+      if (!state.isTrackLoading && !state.isPlaying && Number.isFinite(el.nativeAudio.currentTime)) {
         frozenCurTime = el.nativeAudio.currentTime;
       }
       updateMediaPositionState();
@@ -8081,7 +8112,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const dur = getReliableTrackDuration();
 
       const X = parseInt(localStorage.getItem('lumo_crossfade') || '0', 10);
-      if (X > 0 && !crossfadeTriggered && !state.isRepeat && dur > Math.max(X * 3, 30) && (!hlsInstance || dur >= (state.currentTrack?.duration || 0) * 0.9) && cur >= dur - X && (!audioEngine || !audioEngine.isLiveStream(el.nativeAudio))) {
+      if (X > 0 && !crossfadeTriggered && !state.isRepeat && cur > 15 && dur > Math.max(X * 3, 30) && (!hlsInstance || dur >= (state.currentTrack?.duration || 0) * 0.9) && cur >= dur - X && cur < dur && (!audioEngine || !audioEngine.isLiveStream(el.nativeAudio))) {
         crossfadeTriggered = true;
         crossfadeFadeInPending = true;
         if (audioEngine) audioEngine.fadeOut(X / 2);
@@ -8160,6 +8191,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function handleScrubberStart(e) {
     if (e.button !== undefined && e.button !== 0) return;
+    if (e.type === 'mousedown' && window.PointerEvent && activeScrubberPointerId !== null) return;
     isDraggingScrubber = true;
     hasDrawnPausedFrame = false;
     activeScrubberPointerId = e.pointerId ?? null;
@@ -15242,10 +15274,15 @@ function bindCoverHoldZoom(wrapEl) {
       }
     });
 
+    const triggerSearchAction = () => {
+      const val = el.searchInput ? el.searchInput.value.trim() : '';
+      if (val) performSearch(val);
+    };
+
     el.searchInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        const val = el.searchInput.value.trim();
-        if (val) performSearch(val);
+      if (e.key === 'Enter' || e.keyCode === 13 || e.which === 13) {
+        e.preventDefault();
+        triggerSearchAction();
       } else if (e.key === 'Escape') {
         el.searchInput.value = '';
         if (el.searchClearBtn) el.searchClearBtn.classList.add('hidden');
@@ -18154,7 +18191,7 @@ function bindCoverHoldZoom(wrapEl) {
 
   function applyCustomStyles() {
     document.querySelectorAll('style[data-riff-custom]').forEach((n) => n.remove());
-    customThemes.filter((t) => t.enabled).forEach((t) => {
+    (Array.isArray(customThemes) ? customThemes : []).filter((t) => t && t.enabled).forEach((t) => {
       const s = document.createElement('style');
       s.dataset.riffCustom = 'theme';
       s.dataset.themeId = t.id;
@@ -18435,7 +18472,7 @@ function bindCoverHoldZoom(wrapEl) {
   async function loadPlugins() {
     if (!window.electronAPI || !window.electronAPI.listPlugins) return;
     pluginsCache = await window.electronAPI.listPlugins();
-    pluginsCache.filter((p) => p.enabled).forEach(runPlugin);
+    (Array.isArray(pluginsCache) ? pluginsCache : []).filter((p) => p && p.enabled).forEach(runPlugin);
     renderPluginCards();
   }
   const pluginsApi = window.electronAPI;
@@ -26559,6 +26596,14 @@ function bindCoverHoldZoom(wrapEl) {
     });
   }
 
+  
+  if (typeof isMobileEnvironment === 'function' && isMobileEnvironment()) {
+    window.addEventListener('focusout', () => {
+      window.scrollTo(0, 0);
+      if (document.body) document.body.scrollTop = 0;
+      if (document.documentElement) document.documentElement.scrollTop = 0;
+    });
+  }
   emitPluginEvent('ready');
 });
 

@@ -217,9 +217,9 @@
 
           this.normGain = this.ctx.createGain();
           this.normLimiter = this.ctx.createDynamicsCompressor();
-          this.normLimiter.threshold.value = -2;
+          this.normLimiter.threshold.value = 0.0;
           this.normLimiter.knee.value = 0;
-          this.normLimiter.ratio.value = 20;
+          this.normLimiter.ratio.value = 1;
           this.normLimiter.attack.value = 0.003;
           this.normLimiter.release.value = 0.1;
           this.levelAnalyser = this.ctx.createAnalyser();
@@ -542,8 +542,10 @@
       this.appliedElementVolume = vol;
       if (this._attachedElement) {
         try {
+          window._isInternalVolumeUpdate = true;
           this._attachedElement.volume = vol;
           this._attachedElement.muted = this.graphInitialized ? false : !!this.isMuted;
+          setTimeout(() => { window._isInternalVolumeUpdate = false; }, 60);
         } catch (_) {}
       }
       if (this.masterGain) {
@@ -583,25 +585,26 @@
       }
     }
 
-    fadeIn(durationSec = 0.35) {
+    fadeIn(durationSec = 0.2) {
+      const rampSec = Math.min(0.2, Math.max(0.05, durationSec));
       if (this.masterGain && this.ctx) {
         this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
-        this.masterGain.gain.setValueAtTime(0.001, this.ctx.currentTime);
-        const targetVol = (this.isMuted ? 0 : 1) * (this.audioSettings.volume || 1.0);
-        this.masterGain.gain.exponentialRampToValueAtTime(
-          Math.max(0.001, targetVol), this.ctx.currentTime + durationSec
+        const targetVol = (this.isMuted ? 0 : 1) * (Number.isFinite(this.audioSettings.volume) ? this.audioSettings.volume : 1.0);
+        this.masterGain.gain.setValueAtTime(Math.max(0.1, targetVol * 0.3), this.ctx.currentTime);
+        this.masterGain.gain.linearRampToValueAtTime(
+          Math.max(0.001, targetVol), this.ctx.currentTime + rampSec
         );
       } else if (this._attachedElement) {
         try {
           const el = this._attachedElement;
           const targetVol = this.appliedElementVolume || (this.isMuted ? 0 : 0.85);
-          el.volume = 0;
-          const steps = 10;
-          const stepTime = (durationSec * 1000) / steps;
+          el.volume = Math.max(0.1, targetVol * 0.3);
+          const steps = 6;
+          const stepTime = (rampSec * 1000) / steps;
           let currentStep = 0;
           const interval = setInterval(() => {
             currentStep++;
-            el.volume = Math.min(targetVol, targetVol * (currentStep / steps));
+            el.volume = Math.min(targetVol, targetVol * (0.3 + 0.7 * (currentStep / steps)));
             if (currentStep >= steps) clearInterval(interval);
           }, stepTime);
         } catch (_) {}

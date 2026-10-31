@@ -30,12 +30,15 @@ if (gradleResult.status !== 0) {
   process.exit(1);
 }
 
+const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
+const version = pkg.version || '44.0.23';
+
 const apkSrc = path.join(androidDir, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
-const apkDest = path.join(rootDir, 'Lumo-44.0.21-android.apk');
+const apkDest = path.join(rootDir, `Lumo-${version}-android.apk`);
 fs.copyFileSync(apkSrc, apkDest);
 console.log('[3/4] Copied APK to', apkDest);
 
 console.log('[4/4] Installing APK on device R8YY30W323N...');
 execSync(`"${adbPath}" -s R8YY30W323N install -r "${apkDest}"`, { stdio: 'inherit' });
 
-console.log('Successfully built and installed 44.0.21!');
+console.log(`Successfully built and installed ${version}!`);

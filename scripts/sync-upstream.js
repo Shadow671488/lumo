@@ -8,14 +8,16 @@
  * while STRICTLY preserving all custom Lumo features:
  *  - Custom branding & product identity (Lumo by Oxeez)
  *  - Custom profile system (registration, Telegram verification, avatar, bio)
- *  - Custom friends system (requests, autocomplete, pending list)
+ *  - Custom friends system (requests, autocomplete, pending list, click-to-profile)
  *  - Custom TV Karaoke controls (pure white active like, centered repost icon)
  *  - Custom 10-band equalizer layout with visible -12 dB scale
+ *  - Custom server endpoints (image proxy, Oxeez statistics, stream protection)
+ *  - Custom storage (src/storage.json is never deleted or cleared)
  *  - Custom launchers (Launch Lumo.bat, start-lumo.js, brand-electron.js)
  *  - Custom tests (verify_*.test.js)
  */
 
-const { execSync, spawn } = require('child_process');
+const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -52,6 +54,10 @@ async function syncUpstream() {
   }
   console.log(`[INFO] Using ${gitVersion}`);
 
+  // Abort any lingering merge or rebase
+  runCapture('git merge --abort');
+  runCapture('git rebase --abort');
+
   // 2. Ensure upstream remote exists
   const remotes = runCapture('git remote -v') || '';
   if (!remotes.includes('upstream')) {
@@ -71,7 +77,6 @@ async function syncUpstream() {
   const currentVersion = pkg.version || '43.0.0';
   console.log(`[INFO] Current Lumo version: ${currentVersion}`);
 
-  // Get latest upstream tag or commit
   let latestTag = runCapture('git describe --tags --abbrev=0 upstream/main') || '';
   if (!latestTag) {
     const allTags = runCapture('git tag -l "v*" --sort=-v:refname') || '';
@@ -80,7 +85,7 @@ async function syncUpstream() {
   const cleanUpstreamVer = latestTag.replace(/^v/i, '');
   console.log(`[INFO] Latest upstream Riff release: ${latestTag} (${cleanUpstreamVer})`);
 
-  // 5. Create a safety backup branch
+  // 5. Create safety backup branch
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const backupBranch = `backup-lumo-${timestamp}`;
   runCapture(`git branch -f ${backupBranch} HEAD`);
@@ -95,14 +100,19 @@ async function syncUpstream() {
     didStash = true;
   }
 
-  // 7. Protected Lumo files snapshot (ensure custom features are never overwritten)
+  // 7. Protected Lumo files snapshot (ensure custom features are NEVER overwritten or deleted)
   const protectedFiles = [
     'package.json',
+    'src/storage.json',
+    'src/renderer/app.js',
+    'src/renderer/index.html',
+    'src/renderer/styles.css',
+    'src/server/server.js',
     'Launch Lumo.bat',
+    'sync-upstream.bat',
     'scripts/brand-electron.js',
     'scripts/start-lumo.js',
     'scripts/sync-upstream.js',
-    'sync-upstream.bat',
     'assets/01-default.ico',
     'assets/01-default.png',
     'assets/badge-alpha-tester.png',
@@ -131,20 +141,36 @@ async function syncUpstream() {
     }
   }
 
-  // 8. Perform merge from upstream/main with 'ours' strategy for conflicts
-  console.log(`[INFO] Merging upstream bug fixes into Lumo...`);
+  // 8. Safely merge upstream bug fixes with 'ours' conflict resolution
+  console.log('[INFO] Merging upstream bug fixes into Lumo...');
   try {
-    // Attempt merge preferring current custom changes on conflicts (-X ours)
     run('git merge --no-commit -s ort -X ours upstream/main', { ignoreError: true });
   } catch (err) {
-    console.log('[WARN] Merge required conflict resolution; applying Lumo protections...');
+    // Continue to conflict resolution
   }
 
-  // Restore all protected Lumo files
+  // Check if Git merge encountered conflicts (e.g. modify/delete on storage.json)
+  const unmerged = runCapture('git diff --name-only --diff-filter=U') || '';
+  if (unmerged.trim().length > 0) {
+    console.log('[INFO] Resolving conflicts in favor of Lumo custom configurations...');
+    runCapture('git checkout --ours .');
+  }
+
+  // Restore all protected Lumo files strictly from memory snapshot
   for (const [rel, content] of protectedBackup.entries()) {
     const full = path.join(ROOT_DIR, rel);
     fs.mkdirSync(path.dirname(full), { recursive: true });
     fs.writeFileSync(full, content);
+  }
+
+  // Re-stage resolved files
+  runCapture('git add -A');
+
+  // If a merge was in progress, commit it cleanly
+  const mergeHead = path.join(ROOT_DIR, '.git', 'MERGE_HEAD');
+  if (fs.existsSync(mergeHead)) {
+    runCapture('git commit -m "chore(upstream): sync official Riff bug fixes into Lumo"');
+    console.log('[INFO] Upstream merge committed cleanly.');
   }
 
   // Restore stashed working files if any
@@ -153,7 +179,7 @@ async function syncUpstream() {
     runCapture('git stash pop');
   }
 
-  // 9. Update package.json version if upstream is newer
+  // 9. Update package.json version if upstream is newer, keeping Lumo branding
   try {
     const currentPkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
     currentPkg.name = 'lumo';

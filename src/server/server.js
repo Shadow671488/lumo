@@ -4557,6 +4557,14 @@ function pathfinderRequest(accessToken, variables) {
   });
 }
 
+function spotifyTrackId(track) {
+  const id = typeof track?.id === 'string' ? track.id : '';
+  if (/^[A-Za-z0-9]{22}$/.test(id)) return id;
+  const uri = typeof track?.uri === 'string' ? track.uri : '';
+  const match = uri.match(/^spotify:track:([A-Za-z0-9]{22})$/);
+  return match ? match[1] : '';
+}
+
 async function fetchFullSpotifyPlaylist(playlistId, accessToken) {
   const uri = `spotify:playlist:${playlistId}`;
   const first = await pathfinderRequest(accessToken, { uri, offset: 0, limit: 100, enableWatchFeedEntrypoint: true });
@@ -4579,7 +4587,8 @@ async function fetchFullSpotifyPlaylist(playlistId, accessToken) {
     const artists = (t.albumOfTrack?.artists?.items || []).map(a => a.profile?.name).filter(Boolean);
     const durationMs = t.trackDuration?.totalMilliseconds || t.duration?.totalMilliseconds || t.duration_ms;
     const duration = typeof durationMs === 'number' ? Math.round(durationMs / 1000) : 0;
-    return { title: (t.name || '').trim(), artist: artists.join(', '), duration };
+    const spotifyId = spotifyTrackId(t);
+    return { id: spotifyId, spotifyId, spotifyUrl: spotifyId ? `https://open.spotify.com/track/${spotifyId}` : '', title: (t.name || '').trim(), artist: artists.join(', '), duration };
   }).filter(t => t.title);
   return { tracks, total };
 }
@@ -4609,7 +4618,11 @@ async function trySpotifyWebApi(playlistId) {
       if (nextUrl || (Number.isInteger(playlistItems.total) && items.length < playlistItems.total)) return null;
       const tracks = items.map(it => {
         const t = it?.item || it?.track || it || {};
+        const spotifyId = spotifyTrackId(t);
         return {
+          id: spotifyId,
+          spotifyId,
+          spotifyUrl: spotifyId ? `https://open.spotify.com/track/${spotifyId}` : '',
           title: t.name || '',
           artist: Array.isArray(t.artists) ? t.artists.map(a => a.name).join(', ') : '',
           duration: t.duration_ms ? Math.round(t.duration_ms / 1000) : undefined
@@ -4746,7 +4759,11 @@ async function handleSpotifyImport(req, res, inputUrl) {
       if (Array.isArray(entity?.trackList) && entity.trackList.length > 0) {
         tracks = entity.trackList.slice(0, 100).map(t => {
           const duration = typeof t.duration === 'number' ? Math.round(t.duration / 1000) : (typeof t.duration_ms === 'number' ? Math.round(t.duration_ms / 1000) : 0);
+          const spotifyId = spotifyTrackId(t);
           return {
+            id: spotifyId,
+            spotifyId,
+            spotifyUrl: spotifyId ? `https://open.spotify.com/track/${spotifyId}` : '',
             title: (t.title || t.name || '').trim(),
             artist: (t.subtitle || t.artist || '').trim(),
             duration
@@ -4767,7 +4784,8 @@ async function handleSpotifyImport(req, res, inputUrl) {
             if (!seen.has(key)) {
               seen.add(key);
               const durSec = typeof duration === 'number' ? (duration > 1000 ? Math.round(duration / 1000) : Math.round(duration)) : 0;
-              tracks.push({ title: title.trim(), artist: typeof subtitle === 'string' ? subtitle.trim() : '', duration: durSec });
+              const spotifyId = spotifyTrackId(node);
+              tracks.push({ id: spotifyId, spotifyId, spotifyUrl: spotifyId ? `https://open.spotify.com/track/${spotifyId}` : '', title: title.trim(), artist: typeof subtitle === 'string' ? subtitle.trim() : '', duration: durSec });
             }
             return;
           }
@@ -5649,7 +5667,7 @@ async function handleSpotifyLibrary(req, res, query) {
           const artist = (Array.isArray(t.artists) && t.artists[0]?.name) || '';
           const title = t.name || '';
           const duration = t.duration_ms ? Math.round(t.duration_ms / 1000) : undefined;
-          if (title) likes.push({ title, artist, duration });
+          if (title) { const spotifyId = spotifyTrackId(t); likes.push({ id: spotifyId, spotifyId, spotifyUrl: spotifyId ? `https://open.spotify.com/track/${spotifyId}` : '', title, artist, duration }); }
           if (likes.length >= 5000) break;
         }
         nextUrl = data.next || null;
@@ -5697,7 +5715,7 @@ async function handleSpotifyLibrary(req, res, query) {
           const artist = (Array.isArray(t.artists) && t.artists[0]?.name) || '';
           const title = t.name || '';
           const duration = t.duration_ms ? Math.round(t.duration_ms / 1000) : undefined;
-          if (title) plTracks.push({ title, artist, duration });
+          if (title) { const spotifyId = spotifyTrackId(t); plTracks.push({ id: spotifyId, spotifyId, spotifyUrl: spotifyId ? `https://open.spotify.com/track/${spotifyId}` : '', title, artist, duration }); }
         }
         let trackNext = pageData.next || null;
         while (trackNext) {
@@ -5716,7 +5734,7 @@ async function handleSpotifyLibrary(req, res, query) {
             const artist = (Array.isArray(t.artists) && t.artists[0]?.name) || '';
             const title = t.name || '';
             const duration = t.duration_ms ? Math.round(t.duration_ms / 1000) : undefined;
-            if (title) plTracks.push({ title, artist, duration });
+            if (title) { const spotifyId = spotifyTrackId(t); plTracks.push({ id: spotifyId, spotifyId, spotifyUrl: spotifyId ? `https://open.spotify.com/track/${spotifyId}` : '', title, artist, duration }); }
           }
           trackNext = nextData.next || null;
         }

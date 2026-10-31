@@ -11,10 +11,10 @@
       mkLumo = pkgs:
         pkgs.buildNpmPackage rec {
           pname = "lumo";
-          version = "43.0.0";
+          version = "44.0.1";
           src = self;
 
-          npmDepsHash = "sha256-JaKPpflDVhsVPvq/ZFbFKzEaqKExRd2xUAIrte3PE1M=";
+          npmDepsHash = "sha256-kjjcx1RZwgcZYJiveFEQcR4EAAOZ1nytWf2ru15bs5c=";
 
           ELECTRON_SKIP_BINARY_DOWNLOAD = "1";
           forceGitDeps = true;

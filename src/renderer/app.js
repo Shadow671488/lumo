@@ -12068,11 +12068,6 @@ function renderClickableArtists(container, rawArtist) {
             if (el.navHistory) el.navHistory.classList.add('active');
             renderHistoryView();
           } else if (viewName === 'stats') {
-            if (!isUserOxeez()) {
-              showToast('Listening statistics are only available to the owner (Oxeez)', 'warning');
-              switchView('discover');
-              return;
-            }
             if (el.viewStats) el.viewStats.classList.add('active');
             if (el.navStats) el.navStats.classList.add('active');
             renderStatsView();
@@ -12418,7 +12413,7 @@ function renderClickableArtists(container, rawArtist) {
     const btn = document.getElementById('btn-user-profile');
     const account = getUserAccount();
     if (el.navStats) {
-      el.navStats.style.display = isUserOxeez(account) ? '' : 'none';
+      el.navStats.style.display = '';
     }
     const sidebarImg = document.getElementById('nav-sidebar-profile-img');
     const sidebarInitial = document.getElementById('nav-sidebar-profile-initial');

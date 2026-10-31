@@ -11,7 +11,7 @@
       mkLumo = pkgs:
         pkgs.buildNpmPackage rec {
           pname = "lumo";
-          version = "44.0.18";
+          version = "44.0.23";
           src = self;
 
           npmDepsHash = "sha256-PxmJzPE2RM+ZPpwdAiKy9PDEZpKb+Sgu8SERKv/VCW0=";

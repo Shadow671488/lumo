@@ -794,12 +794,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   applyFont(state.riffFont);
 
   
+  function isMobileEnvironment() {
+    return !!(window.isMobile || window.isCapacitorApp || (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) || (document.body && document.body.classList.contains('is-mobile')) || (document.documentElement && document.documentElement.classList.contains('is-mobile')) || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
+  }
+
   function getServerBaseUrl() {
-    const configured = localStorage.getItem('lumo_server_url') || localStorage.getItem('riff_server_url');
+    const configured = localStorage.getItem('lumo_server_url') || localStorage.getItem('riff_server_url') || localStorage.getItem('lumo_desktop_server_url');
     if (configured && configured.trim()) {
       let u = configured.trim();
       if (!u.startsWith('http://') && !u.startsWith('https://')) u = 'http://' + u;
       return u.replace(/\/+$/, '');
+    }
+    if (isMobileEnvironment()) {
+      return null;
     }
     if (state.serverPort && state.serverPort !== 'null' && Number(state.serverPort) > 0) {
       return 'http://127.0.0.1:' + state.serverPort;
@@ -841,16 +848,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (resp.ok) {
           const list = await resp.json();
           if (Array.isArray(list) && list.length > 0) {
-            const tracks = list.slice(0, limit).map(item => ({
-              id: item.videoId,
-              title: item.title,
-              artist: item.author || 'Unknown Artist',
-              duration: item.lengthSeconds || 180,
-              thumbnail: (item.videoThumbnails && item.videoThumbnails[0]?.url) || ('https://i.ytimg.com/vi/' + item.videoId + '/hqdefault.jpg'),
-              url: 'https://www.youtube.com/watch?v=' + item.videoId,
-              platform: 'youtube'
-            }));
-            return { success: true, tracks };
+            const validVideos = list.filter(item => item && item.videoId && item.title);
+            if (validVideos.length > 0) {
+              const tracks = validVideos.slice(0, limit).map(item => ({
+                id: item.videoId,
+                title: item.title,
+                artist: item.author || 'Unknown Artist',
+                duration: item.lengthSeconds || 180,
+                thumbnail: (item.videoThumbnails && item.videoThumbnails[0]?.url) || ('https://i.ytimg.com/vi/' + item.videoId + '/hqdefault.jpg'),
+                url: 'https://www.youtube.com/watch?v=' + item.videoId,
+                platform: 'youtube'
+              }));
+              return { success: true, tracks };
+            }
           }
         }
       } catch (_) {}
@@ -921,51 +931,65 @@ document.addEventListener('DOMContentLoaded', async () => {
       cleanId = trackUrl.split('v=')[1].split('&')[0];
     }
     if (!cleanId && track && track.id) cleanId = track.id;
-    if (cleanId && String(cleanId).startsWith('itunes_') || String(cleanId).startsWith('deezer_')) {
+    if (cleanId === 'undefined' || cleanId === 'null') cleanId = null;
+
+    if (cleanId && (String(cleanId).startsWith('itunes_') || String(cleanId).startsWith('deezer_'))) {
       if (track?.streamUrl || track?.previewUrl) {
         return { success: true, streamUrl: track.streamUrl || track.previewUrl };
       }
     }
-    if (!cleanId) return { success: false, error: 'No stream identifier found' };
 
-    // Primary: Invidious adaptive formats audio
-    const invidiousInstances = ['https://yt.chocolatemoo53.com', 'https://inv.bp.projectsegfau.lt'];
-    for (const base of invidiousInstances) {
-      try {
-        const resp = await fetch(base + '/api/v1/videos/' + encodeURIComponent(cleanId), { signal });
-        if (resp.ok) {
-          const vData = await resp.json();
-          const audioStreams = (vData.adaptiveFormats || []).filter(f => (f.type || '').startsWith('audio/'));
-          if (audioStreams.length > 0) {
-            audioStreams.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
-            return { success: true, streamUrl: audioStreams[0].url };
+    // 1. Primary: Invidious adaptive formats audio
+    if (cleanId) {
+      const invidiousInstances = ['https://yt.chocolatemoo53.com'];
+      for (const base of invidiousInstances) {
+        try {
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 4500);
+          const resp = await fetch(base + '/api/v1/videos/' + encodeURIComponent(cleanId), { signal: controller.signal });
+          clearTimeout(timeoutId);
+          if (resp.ok) {
+            const vData = await resp.json();
+            const audioStreams = (vData.adaptiveFormats || []).filter(f => (f.type || '').startsWith('audio/'));
+            if (audioStreams.length > 0) {
+              audioStreams.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+              return { success: true, streamUrl: audioStreams[0].url };
+            }
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }
     }
 
-    // Fallback: Piped audio streams
-    const pipedInstances = [
-      'https://pipedapi.kavin.rocks',
-      'https://api.piped.privacy.com.de',
-      'https://pipedapi.leptons.xyz',
-      'https://pipedapi.river.link'
-    ];
-    for (const base of pipedInstances) {
-      try {
-        const resp = await fetch(base + '/streams/' + encodeURIComponent(cleanId), { signal });
-        if (resp.ok) {
-          const sData = await resp.json();
-          const audioStreams = sData.audioStreams || [];
-          if (audioStreams.length > 0) {
-            audioStreams.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
-            return { success: true, streamUrl: audioStreams[0].url };
+    // 2. High-speed Fallback: iTunes preview stream matching track title + artist
+    try {
+      const queryStr = ((track?.artist ? track.artist + ' ' : '') + (track?.title || '')).trim();
+      if (queryStr) {
+        const itController = new AbortController();
+        const itTimeout = setTimeout(() => itController.abort(), 3500);
+        const itRes = await fetch('https://itunes.apple.com/search?term=' + encodeURIComponent(queryStr) + '&entity=song&limit=1', { signal: itController.signal });
+        clearTimeout(itTimeout);
+        if (itRes.ok) {
+          const itData = await itRes.json();
+          if (itData?.results?.[0]?.previewUrl) {
+            return { success: true, streamUrl: itData.results[0].previewUrl };
           }
         }
-      } catch (_) {}
-    }
 
-    return { success: false, error: 'Could not resolve audio stream on mobile' };
+        // 3. Fallback: Deezer preview stream
+        const dzController = new AbortController();
+        const dzTimeout = setTimeout(() => dzController.abort(), 3500);
+        const dzRes = await fetch('https://api.deezer.com/search?q=' + encodeURIComponent(queryStr) + '&limit=1', { signal: dzController.signal });
+        clearTimeout(dzTimeout);
+        if (dzRes.ok) {
+          const dzData = await dzRes.json();
+          if (dzData?.data?.[0]?.preview) {
+            return { success: true, streamUrl: dzData.data[0].preview };
+          }
+        }
+      }
+    } catch (_) {}
+
+    return { success: false, error: 'Could not resolve audio stream' };
   }
 
 
@@ -1021,7 +1045,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   function sendStateToServer(currentWordText = '', wordIndex = -1, lineIndex = -1) {
-    if (!state.currentTrack) return;
+    if (!state.currentTrack || isMobileEnvironment() || !state.serverPort) return;
     fetch(`http://127.0.0.1:${state.serverPort}/api/state`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -4173,7 +4197,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       let resolvedId = track.id;
 
       let isCached = false;
-      if (track && (track.id || track.title)) {
+      if (!isMobileEnvironment() && state.serverPort && track && (track.id || track.title)) {
         try {
           const tParam = encodeURIComponent(track.title || '');
           const aParam = encodeURIComponent(track.artist || '');
@@ -4193,7 +4217,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       if (currentToken !== state.loadToken) return;
 
-      if (!isCached && ((!resolvedUrl && !resolvedId) || (resolvedUrl && resolvedUrl.includes('/results?search_query=')) || (resolvedId && (String(resolvedId).startsWith('it-') || String(resolvedId).startsWith('it_')) && (!resolvedUrl || resolvedUrl.includes('results?'))) || (track.platform === 'applemusic' && (!resolvedUrl || resolvedUrl.includes('results?'))))) {
+      if (!isMobileEnvironment() && state.serverPort && !isCached && ((!resolvedUrl && !resolvedId) || (resolvedUrl && resolvedUrl.includes('/results?search_query=')) || (resolvedId && (String(resolvedId).startsWith('it-') || String(resolvedId).startsWith('it_')) && (!resolvedUrl || resolvedUrl.includes('results?'))) || (track.platform === 'applemusic' && (!resolvedUrl || resolvedUrl.includes('results?'))))) {
         const sq = track.searchQuery || ((track.artist ? track.artist + ' - ' : '') + (track.title || '')).trim();
         if (sq) {
           try {

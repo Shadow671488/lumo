@@ -35,7 +35,9 @@ function initUpdater(getWindow) {
   // Only check a release repo that belongs to this build. Unset by default, so
   // a fork does not offer the original Riff releases (e.g. "43.2.1 available")
   // or risk replacing itself with someone else's build.
-  const updateRepo = (process.env.LUMO_UPDATE_REPO || 'rootscripts/riff').trim();
+  const publishTarget = (pkg.build && pkg.build.publish && pkg.build.publish[0]) || {};
+  const defaultRepo = (publishTarget.owner && publishTarget.repo) ? (publishTarget.owner + '/' + publishTarget.repo) : 'Shadow671488/lumo';
+  const updateRepo = (process.env.LUMO_UPDATE_REPO || defaultRepo).trim();
   const updaterEnabled = true;
   const releasesUrl = updateRepo ? `https://github.com/${updateRepo}` : '';
   let manualCheck = false;
@@ -118,7 +120,7 @@ function initUpdater(getWindow) {
         let htmlUrl = `${releasesUrl}/tag/v${info.version}`;
 
         try {
-          const res = await fetch('https://api.github.com/repos/rootscripts/riff/releases/latest', {
+          const res = await fetch('https://api.github.com/repos/' + updateRepo + '/releases/latest', {
             headers: { 'User-Agent': 'Riff-Player' }
           });
           if (res.ok) {

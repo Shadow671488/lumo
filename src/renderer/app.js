@@ -18853,7 +18853,7 @@ function bindCoverHoldZoom(wrapEl) {
     const originalBtnHtml = btn ? btn.innerHTML : 'Check for updates';
     let manualUpdateCheck = false;
     let checkTimeoutId = null;
-    let fallbackReleaseUrl = 'https://github.com/rootscripts/riff/releases/latest';
+    let fallbackReleaseUrl = 'https://github.com/Shadow671488/lumo/releases/latest';
     let canNativeInstall = false;
 
     let latestUpdateInfo = null;
@@ -18975,13 +18975,13 @@ function bindCoverHoldZoom(wrapEl) {
           showToast('Could not check for updates', 'error');
           return;
         }
-        const res = await fetch('https://api.github.com/repos/rootscripts/riff/releases/latest', {
+        const res = await fetch('https://api.github.com/repos/Shadow671488/lumo/releases/latest', {
           headers: { 'User-Agent': 'Riff-Player' }
         });
         if (!res.ok) throw new Error('HTTP ' + res.status);
         const json = await res.json();
         const latestVersion = (json.tag_name || '').replace(/^v/i, '');
-        fallbackReleaseUrl = json.html_url || 'https://github.com/rootscripts/riff/releases/latest';
+        fallbackReleaseUrl = json.html_url || 'https://github.com/Shadow671488/lumo/releases/latest';
         if (isNewerVersion(latestVersion, currentAppVersion)) {
           latestUpdateInfo = {
             version: latestVersion,
@@ -19044,7 +19044,7 @@ function bindCoverHoldZoom(wrapEl) {
 
         if (!hasImg || !hasPublishedAt) {
           try {
-            const res = await fetch('https://api.github.com/repos/rootscripts/riff/releases/latest', {
+            const res = await fetch('https://api.github.com/repos/Shadow671488/lumo/releases/latest', {
               headers: { 'User-Agent': 'Riff-Player' }
             });
             if (res.ok) {

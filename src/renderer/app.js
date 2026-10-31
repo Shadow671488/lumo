@@ -727,8 +727,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     paletteStyle: localStorage.getItem('lumo_palette_style') || 'classic',
     meshBrightness: parseInt(localStorage.getItem('lumo_mesh_brightness') || '100', 10),
     themeAccent: localStorage.getItem('lumo_theme_accent') || '#6750A4',
-    themeIntensity: parseInt(localStorage.getItem('lumo_theme_intensity') || '0'),
-    themeBrightness: parseInt(localStorage.getItem('lumo_theme_brightness') || '0'),
+    themeIntensity: (() => {
+      const v = localStorage.getItem('lumo_theme_intensity');
+      if (v === null || v === '0') return 50;
+      const num = parseInt(v, 10);
+      return isNaN(num) ? 50 : num;
+    })(),
+    themeBrightness: (() => {
+      const v = localStorage.getItem('lumo_theme_brightness');
+      if (v === null || v === '0') return 50;
+      const num = parseInt(v, 10);
+      return isNaN(num) ? 50 : num;
+    })(),
     trEnabled: localStorage.getItem('lumo_tr_enabled') === 'true',
     trLang: localStorage.getItem('lumo_tr_lang') || 'en',
     trAuto: localStorage.getItem('lumo_tr_auto') === 'true',
@@ -15917,9 +15927,20 @@ function bindCoverHoldZoom(wrapEl) {
     });
   }
 
+  function ensureActiveThemeColor() {
+    if (state.themeIntensity < 20) {
+      state.themeIntensity = 50;
+      localStorage.setItem('lumo_theme_intensity', '50');
+      if (el.sliderIntensity) el.sliderIntensity.value = 50;
+      if (el.valIntensity) el.valIntensity.textContent = '50%';
+      document.body.classList.remove('intensity-zero');
+    }
+  }
+
   if (el.themeSwatches) {
     el.themeSwatches.forEach(sw => {
       sw.addEventListener('click', () => {
+        ensureActiveThemeColor();
         state.themeAccent = sw.dataset.color;
         localStorage.setItem('lumo_theme_accent', state.themeAccent);
         if (state.themeMode === 'auto') {
@@ -15933,7 +15954,8 @@ function bindCoverHoldZoom(wrapEl) {
   }
 
   if (el.customColorInput) {
-    el.customColorInput.addEventListener('input', (e) => {
+    const onCustomColor = (e) => {
+      ensureActiveThemeColor();
       state.themeAccent = e.target.value;
       localStorage.setItem('lumo_theme_accent', state.themeAccent);
       if (state.themeMode === 'auto') {
@@ -15943,19 +15965,17 @@ function bindCoverHoldZoom(wrapEl) {
       }
       updateThemeFromState();
       if (el.themeSwatches) el.themeSwatches.forEach(sw => sw.classList.remove('active'));
-    });
+    };
+    el.customColorInput.addEventListener('input', onCustomColor);
+    el.customColorInput.addEventListener('change', onCustomColor);
   }
 
   if (el.sliderHue) {
-    el.sliderHue.addEventListener('input', (e) => {
+    const onHueChange = (e) => {
+      ensureActiveThemeColor();
       const h = parseInt(e.target.value, 10);
       if (el.valHue) el.valHue.textContent = h + '°';
-      if (el.themeSwatches) el.themeSwatches.forEach(sw => sw.classList.remove('active'));
-    });
-    el.sliderHue.addEventListener('change', (e) => {
-      const h = parseInt(e.target.value, 10);
-      if (el.valHue) el.valHue.textContent = h + '°';
-      state.themeAccent = hslToHex(h, 55, 50);
+      state.themeAccent = hslToHex(h, 65, 55);
       localStorage.setItem('lumo_theme_accent', state.themeAccent);
       if (state.themeMode === 'auto') {
         const targetMode = currentEffectiveMode || 'dark';
@@ -15964,15 +15984,13 @@ function bindCoverHoldZoom(wrapEl) {
       }
       updateThemeFromState();
       if (el.themeSwatches) el.themeSwatches.forEach(sw => sw.classList.remove('active'));
-    });
+    };
+    el.sliderHue.addEventListener('input', onHueChange);
+    el.sliderHue.addEventListener('change', onHueChange);
   }
 
   if (el.sliderIntensity) {
-    el.sliderIntensity.addEventListener('input', (e) => {
-      const val = parseInt(e.target.value, 10);
-      if (el.valIntensity) el.valIntensity.textContent = val + '%';
-    });
-    el.sliderIntensity.addEventListener('change', (e) => {
+    const onIntensityChange = (e) => {
       if (state.themeMode === 'auto') return;
       const val = parseInt(e.target.value, 10);
       state.themeIntensity = val;
@@ -15980,21 +15998,21 @@ function bindCoverHoldZoom(wrapEl) {
       if (el.valIntensity) el.valIntensity.textContent = val + '%';
       localStorage.setItem('lumo_theme_intensity', val.toString());
       updateThemeFromState();
-    });
+    };
+    el.sliderIntensity.addEventListener('input', onIntensityChange);
+    el.sliderIntensity.addEventListener('change', onIntensityChange);
   }
   if (el.sliderBrightness) {
-    el.sliderBrightness.addEventListener('input', (e) => {
-      const val = parseInt(e.target.value, 10);
-      if (el.valBrightness) el.valBrightness.textContent = val + '%';
-    });
-    el.sliderBrightness.addEventListener('change', (e) => {
+    const onBrightnessChange = (e) => {
       if (state.themeMode === 'auto') return;
       const val = parseInt(e.target.value, 10);
       state.themeBrightness = val;
       if (el.valBrightness) el.valBrightness.textContent = val + '%';
       localStorage.setItem('lumo_theme_brightness', val.toString());
       updateThemeFromState();
-    });
+    };
+    el.sliderBrightness.addEventListener('input', onBrightnessChange);
+    el.sliderBrightness.addEventListener('change', onBrightnessChange);
   }
 
   if (el.sliderScale) {
@@ -16859,6 +16877,7 @@ function bindCoverHoldZoom(wrapEl) {
     paletteMenu.querySelectorAll('.m3-dropdown-option').forEach(opt => {
       opt.addEventListener('click', (e) => {
         e.stopPropagation();
+        if (typeof ensureActiveThemeColor === 'function') ensureActiveThemeColor();
         const val = opt.dataset.value;
         state.paletteStyle = val;
         localStorage.setItem('lumo_palette_style', state.paletteStyle);

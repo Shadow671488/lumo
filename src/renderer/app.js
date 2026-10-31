@@ -495,24 +495,29 @@ document.addEventListener('DOMContentLoaded', async () => {
   const savedScale = parseFloat(localStorage.getItem('lumo_ui_scale') || '100');
   applyScale(savedScale);
 
+  window.__handleAndroidBack = function() {
+    if (el.rightPanel && el.rightPanel.classList.contains('mobile-open')) {
+      el.rightPanel.classList.remove('mobile-open');
+      el.rightPanel.classList.add('hidden');
+      return true;
+    }
+    const openModal = document.querySelector('.m3-dialog-backdrop:not(.hidden), .modal:not(.hidden), .m3-modal:not(.hidden)');
+    if (openModal) {
+      const closeBtn = openModal.querySelector('[id*="close"], .btn-close, .modal-close');
+      if (closeBtn) closeBtn.click();
+      else openModal.classList.add('hidden');
+      return true;
+    }
+    if (state.currentView && state.currentView !== 'discover') {
+      switchView('discover');
+      return true;
+    }
+    return false;
+  };
+
   if (isMobileEnvironment()) {
     document.addEventListener('backbutton', (e) => {
-      if (el.rightPanel && el.rightPanel.classList.contains('mobile-open')) {
-        el.rightPanel.classList.remove('mobile-open');
-        el.rightPanel.classList.add('hidden');
-        return;
-      }
-      const openModal = document.querySelector('.m3-dialog-backdrop:not(.hidden), .modal:not(.hidden), .m3-modal:not(.hidden)');
-      if (openModal) {
-        const closeBtn = openModal.querySelector('[id*="close"], .btn-close, .modal-close');
-        if (closeBtn) closeBtn.click();
-        else openModal.classList.add('hidden');
-        return;
-      }
-      if (state.currentView && state.currentView !== 'discover') {
-        switchView('discover');
-        return;
-      }
+      window.__handleAndroidBack();
     });
   }
 
@@ -849,7 +854,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const cleanQ = encodeURIComponent(String(query || '').trim());
     if (!cleanQ) return { success: true, tracks: [] };
 
-    // 1. If connected to desktop server (e.g. adb reverse or local network), try it first with safe timeout
+    // 1. Desktop server search if connected
     const serverBase = getServerBaseUrl();
     if (serverBase) {
       try {
@@ -868,28 +873,43 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
-    // 2. Standalone mobile search provider A: Invidious (yt.chocolatemoo53.com) - Full YouTube audio tracks
-    const invidiousInstances = ['https://yt.chocolatemoo53.com', 'https://inv.bp.projectsegfau.lt'];
+    // Helper to format track nicely
+    function cleanTrackMeta(rawTitle, rawAuthor, videoId, lengthSec) {
+      let title = String(rawTitle || rawAuthor || 'Unknown Track').trim();
+      let artist = String(rawAuthor || 'Unknown Artist').trim();
+      if (title.includes(' - ')) {
+        const parts = title.split(' - ');
+        if (parts[0] && parts[1]) {
+          artist = parts[0].trim();
+          title = parts.slice(1).join(' - ').trim();
+        }
+      }
+      title = title.replace(/\s*[\[\(](Official\s*(Video|Audio|Music\s*Video)?|Lyrics?|HD|HQ|4K|Visualizer|Audio)[\]\)]/gi, '').trim();
+      return {
+        id: videoId,
+        title: title || 'Track',
+        artist: artist || 'Artist',
+        duration: lengthSec || 180,
+        thumbnail: 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg',
+        url: 'https://www.youtube.com/watch?v=' + videoId,
+        platform: 'youtube'
+      };
+    }
+
+    // 2. Standalone mobile search provider A: Invidious
+    const invidiousInstances = ['https://yt.chocolatemoo53.com'];
     for (const base of invidiousInstances) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 4500);
+        const timeoutId = setTimeout(() => controller.abort(), 4000);
         const resp = await fetch(base + '/api/v1/search?q=' + cleanQ + '&type=video', { signal: controller.signal });
         clearTimeout(timeoutId);
         if (resp.ok) {
           const list = await resp.json();
           if (Array.isArray(list) && list.length > 0) {
-            const validVideos = list.filter(item => item && item.videoId && item.title);
+            const validVideos = list.filter(item => item && item.videoId && (item.title || item.author));
             if (validVideos.length > 0) {
-              const tracks = validVideos.slice(0, limit).map(item => ({
-                id: item.videoId,
-                title: item.title,
-                artist: item.author || 'Unknown Artist',
-                duration: item.lengthSeconds || 180,
-                thumbnail: (item.videoThumbnails && item.videoThumbnails[0]?.url) || ('https://i.ytimg.com/vi/' + item.videoId + '/hqdefault.jpg'),
-                url: 'https://www.youtube.com/watch?v=' + item.videoId,
-                platform: 'youtube'
-              }));
+              const tracks = validVideos.slice(0, limit).map(item => cleanTrackMeta(item.title, item.author, item.videoId, item.lengthSeconds));
               return { success: true, tracks };
             }
           }
@@ -897,10 +917,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (_) {}
     }
 
-    // 3. Standalone mobile search provider B: iTunes API (Fast, 100% reliable, pristine cover art & preview streams)
+    // 3. Standalone mobile search provider B: iTunes API (Fast, 100% reliable, high-res covers & previews)
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const timeoutId = setTimeout(() => controller.abort(), 3500);
       const itunesResp = await fetch('https://itunes.apple.com/search?term=' + cleanQ + '&entity=song&limit=' + limit, { signal: controller.signal });
       clearTimeout(timeoutId);
       if (itunesResp.ok) {
@@ -909,7 +929,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (results.length > 0) {
           const tracks = results.map(item => ({
             id: 'itunes_' + item.trackId,
-            title: item.trackName,
+            title: item.trackName || 'Unknown Title',
             artist: item.artistName || 'Unknown Artist',
             album: item.collectionName || '',
             duration: Math.round((item.trackTimeMillis || 180000) / 1000),
@@ -923,33 +943,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     } catch (_) {}
 
-    // 4. Standalone mobile search provider C: Deezer API
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4000);
-      const deezerResp = await fetch('https://api.deezer.com/search?q=' + cleanQ + '&limit=' + limit, { signal: controller.signal });
-      clearTimeout(timeoutId);
-      if (deezerResp.ok) {
-        const dzData = await deezerResp.json();
-        const dzList = Array.isArray(dzData.data) ? dzData.data : [];
-        if (dzList.length > 0) {
-          const tracks = dzList.map(item => ({
-            id: 'deezer_' + item.id,
-            title: item.title,
-            artist: item.artist?.name || 'Unknown Artist',
-            album: item.album?.title || '',
-            duration: item.duration || 180,
-            thumbnail: item.album?.cover_big || item.album?.cover_medium || '',
-            streamUrl: item.preview || '',
-            previewUrl: item.preview || '',
-            platform: 'deezer'
-          }));
-          return { success: true, tracks };
-        }
-      }
-    } catch (_) {}
+    // 4. Standalone fallback: Curated Starter Tracks
+    const starterTracks = typeof getStarterCuratedTracks === 'function' ? getStarterCuratedTracks() : [];
+    const searchDecoded = decodeURIComponent(cleanQ).toLowerCase();
+    const matched = starterTracks.filter(t => (String(t.title || '') + ' ' + String(t.artist || '')).toLowerCase().includes(searchDecoded));
+    if (matched.length > 0) {
+      return { success: true, tracks: matched };
+    }
 
-    return { success: false, tracks: [], error: 'Could not connect to online search providers' };
+    return { success: true, tracks: [], error: 'No matching tracks found' };
   }
 
   async function resolveMobileTrackStream(trackId, trackUrl, track, signal) {
@@ -7762,17 +7764,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (el.nativeAudio) {
     el.nativeAudio.addEventListener('volumechange', () => {
       if (!el.nativeAudio) return;
+      if (window._isInternalVolumeUpdate) return;
       const extMuted = !!el.nativeAudio.muted;
-      const extVol = Math.round(el.nativeAudio.volume * 100) / 100;
-      if (extMuted !== state.isMuted || (!extMuted && Math.abs(extVol - state.volume) > 0.015)) {
+      if (extMuted !== state.isMuted) {
         state.isMuted = extMuted;
-        if (!extMuted) state.volume = extVol;
-        if (el.volumeSlider && !isUserInteractingVolume) el.volumeSlider.value = String(state.volume);
         if (el.volumeIcon) el.volumeIcon.classList.toggle('hidden', state.isMuted);
         if (el.volumeMutedIcon) el.volumeMutedIcon.classList.toggle('hidden', !state.isMuted);
         persistVolumeState();
         if (audioEngine) {
-          audioEngine.volume = state.volume;
           audioEngine.isMuted = state.isMuted;
         }
       }
@@ -8442,7 +8441,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function fetchArtistCardForSearch(query, token, searchTracks) {
     const container = document.getElementById('search-artist-card-container');
-    if (!container) return;
+    if (!container || !state.serverPort) return;
     try {
       const res = await fetch(`http://127.0.0.1:${state.serverPort}/api/artist?name=${encodeURIComponent(query)}`);
       const data = await res.json();
@@ -9118,6 +9117,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.bindHorizontalWheel = bindHorizontalWheel;
 
   async function fetchAlbumsForSearch(query, token) {
+    if (!state.serverPort) return;
     let container = document.getElementById('search-albums-container');
     if (!container) {
       const artistContainer = document.getElementById('search-artist-card-container');
@@ -11251,11 +11251,11 @@ function renderClickableArtists(container, rawArtist) {
     }
     if (isMobileEnvironment()) {
       res = res
-        .replace(new RegExp('\\/(\\d{2,4})x(\\d{2,4})(bb|cc|sr)?\\.(jpg|png|webp)', 'i'), '/600x600bb.$4')
-        .replace(new RegExp('\\/100x100(bb)?\\.(jpg|png|webp)', 'i'), '/600x600bb.$2')
-        .replace(new RegExp('\\/picture\\/([^/]+)\\/\\d+x\\d+-', 'i'), '/picture/$1/500x500-')
-        .replace(new RegExp('=(?:w\\d+-h\\d+|s\\d+)[^&?]*', 'i'), '=w600-h600-l90-rj')
-        .replace(new RegExp('-(?:large|small|badge|crop|t\\d+x\\d+)\\.(jpg|png)', 'i'), '-t500x500.$1');
+        .replace(new RegExp('\\/(\\d{2,4})x(\\d{2,4})(bb|cc|sr)?\\.(jpg|png|webp)', 'i'), '/300x300bb.$4')
+        .replace(new RegExp('\\/100x100(bb)?\\.(jpg|png|webp)', 'i'), '/300x300bb.$2')
+        .replace(new RegExp('\\/picture\\/([^/]+)\\/\\d+x\\d+-', 'i'), '/picture/$1/250x250-')
+        .replace(new RegExp('=(?:w\\d+-h\\d+|s\\d+)[^&?]*', 'i'), '=w300-h300-l90-rj')
+        .replace(new RegExp('-(?:large|small|badge|crop|t\\d+x\\d+)\\.(jpg|png)', 'i'), '-t300x300.$1');
     } else {
       res = res
         .replace(new RegExp('\\/(\\d{2,4})x(\\d{2,4})(bb|cc|sr)?\\.(jpg|png|webp)', 'i'), '/1200x1200bb.$4')
@@ -16220,8 +16220,8 @@ function bindCoverHoldZoom(wrapEl) {
     const step = () => {
       const p = Math.min(1, (Date.now() - started) / 4000);
       const k = Math.max(0, 1 - p);
-      audioEngine.setVolume(Math.round(from * k), state.isMuted);
-      if (k < 1) {
+      audioEngine.setVolume(Math.round(from * k * 100) / 100, state.isMuted);
+      if (p < 1) {
         requestAnimationFrame(step);
         return;
       }

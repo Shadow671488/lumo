@@ -356,11 +356,19 @@ body.perf .titlebar { transition: none !important; }
   border: none;
   color: var(--md-sys-color-on-surface-variant);
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px;
-  border-radius: var(--md-shape-corner-full);
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 28px !important;
+  height: 28px !important;
+  min-width: 28px !important;
+  min-height: 28px !important;
+  padding: 0 !important;
+  margin: 0 4px !important;
+  border-radius: 50% !important;
+  flex-shrink: 0 !important;
+  align-self: center !important;
+  line-height: 1 !important;
 }
 
 .platform-pill-switch {
@@ -3704,13 +3712,20 @@ body.perf .playbar .time-label { transition: none !important; }
 .adv-section-header.is-open .adv-chevron {
   transform: rotate(180deg);
 }
-.adv-collapsible-wrapper {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 300ms cubic-bezier(0.2, 0, 0, 1);
-}
+.adv-collapsible-wrapper,
 .adv-collapsible-wrapper.is-open {
-  grid-template-rows: 1fr;
+  display: block !important;
+  grid-template-rows: none !important;
+}
+.adv-collapsible-inner {
+  min-height: 0;
+  overflow: visible !important;
+}
+.adv-section-header {
+  pointer-events: none !important;
+}
+.adv-section-header .adv-chevron {
+  display: none !important;
 }
 .adv-collapsible-inner {
   min-height: 0;
@@ -11627,7 +11642,7 @@ body.is-mobile {
   height: 100% !important;
   height: 100dvh !important;
   overflow: hidden !important;
-  touch-action: manipulation !important;
+  touch-action: pan-y !important;
   -webkit-touch-callout: none !important;
   -webkit-tap-highlight-color: transparent !important;
   user-select: none !important;
@@ -11761,7 +11776,8 @@ body.is-mobile .main-content {
   overflow-y: auto !important;
   overflow-x: hidden !important;
   -webkit-overflow-scrolling: touch !important;
-  overscroll-behavior-y: contain !important;
+  overscroll-behavior-y: auto !important;
+  touch-action: pan-y !important;
   padding: 6px 16px calc(58px + 64px + env(safe-area-inset-bottom, 0px) + 24px) 16px !important;
   margin: 0 !important;
   border-radius: 0 !important;
@@ -12147,7 +12163,7 @@ body.is-mobile .sp-row {
   overflow-x: auto !important;
   overflow-y: hidden !important;
   -webkit-overflow-scrolling: touch !important;
-  touch-action: pan-x !important;
+  touch-action: pan-x pan-y !important;
   scroll-behavior: smooth !important;
   scrollbar-width: none !important;
   overscroll-behavior-x: contain !important;
@@ -12200,6 +12216,7 @@ body.is-mobile .sp-card-sub {
 body.is-mobile .fav-artists-row {
   grid-auto-columns: 96px !important;
   gap: 14px !important;
+  touch-action: pan-x pan-y !important;
 }
 
 body.is-mobile .fav-artist-card {
@@ -12343,4 +12360,71 @@ body.is-mobile .settings-nav-btn {
   touch-action: none !important;
   user-select: none !important;
   -webkit-user-select: none !important;
+}
+
+/* ============================================================
+   MOBILE PERFORMANCE, SMOOTH SCROLL, MODAL & PADDING FIXES
+   ============================================================ */
+body.is-mobile .sidebar {
+  background: #18181c !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+body.is-mobile .sidebar .nav-item,
+body.is-mobile .sidebar-nav,
+body.is-mobile .playbar,
+body.is-mobile .btn-icon-pill,
+body.is-mobile .track-row,
+body.is-mobile .search-box {
+  touch-action: manipulation !important;
+}
+
+body.is-mobile .home-ambient,
+body.is-mobile .home-ambient-layer {
+  display: none !important;
+}
+
+body.is-mobile #view-profile,
+body.is-mobile #view-settings,
+body.is-mobile #view-favorites,
+body.is-mobile #view-history {
+  padding-bottom: calc(58px + 64px + env(safe-area-inset-bottom, 0px) + 36px) !important;
+}
+
+body.is-mobile .modal-backdrop,
+body.is-mobile .profile-auth-screen {
+  align-items: flex-end !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  background: rgba(0, 0, 0, 0.72) !important;
+}
+
+body.is-mobile .dialog-card,
+body.is-mobile .profile-auth-card,
+body.is-mobile .modal-card {
+  width: 100% !important;
+  max-width: 100vw !important;
+  max-height: 85dvh !important;
+  margin: 0 !important;
+  border-radius: 24px 24px 0 0 !important;
+  border-bottom: none !important;
+  border-left: none !important;
+  border-right: none !important;
+  padding: 20px 20px calc(24px + env(safe-area-inset-bottom, 0px)) 20px !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch !important;
+}
+
+body.is-mobile .profile-auth-screen .dialog-actions {
+  display: flex !important;
+  flex-direction: row !important;
+  gap: 12px !important;
+  margin-top: 16px !important;
+  padding-bottom: 8px !important;
+}
+
+body.is-mobile .profile-auth-screen .dialog-actions button {
+  flex: 1 1 0 !important;
+  min-height: 44px !important;
 }

@@ -4212,23 +4212,24 @@ document.addEventListener('DOMContentLoaded', async () => {
       const declaredPlatform = String(track.platform || track.source || '').toLowerCase();
       const inferredPlatform = /soundcloud\.com/i.test(String(track.url || '')) ? 'soundcloud' : declaredPlatform;
       const streamPlatform = inferredPlatform === 'applemusic' ? 'youtube' : (inferredPlatform || (state.platform === 'all' ? 'youtube' : state.platform));
-      const serverBase = getServerBaseUrl();
+            const serverBase = getServerBaseUrl();
       let data = null;
       if (serverBase) {
-        const streamInfoUrl = `${serverBase}/api/stream-info?url=${encodeURIComponent(resolvedUrl || '')}&id=${encodeURIComponent(resolvedId || '')}&platform=${streamPlatform}&title=${encodeURIComponent(track.title || '')}&artist=${encodeURIComponent(track.artist || '')}&duration=${encodeURIComponent(track.duration || 0)}&thumbnail=${encodeURIComponent(track.thumbnail || '')}`;
-        let res;
         try {
-          res = await fetch(streamInfoUrl, { signal });
-        } catch (fetchErr) {
-          if (fetchErr instanceof TypeError) {
-            await new Promise(r => setTimeout(r, 600));
-            res = await fetch(streamInfoUrl, { signal });
-          } else {
-            throw fetchErr;
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 2500);
+          const streamInfoUrl = `${serverBase}/api/stream-info?url=${encodeURIComponent(resolvedUrl || '')}&id=${encodeURIComponent(resolvedId || '')}&platform=${streamPlatform}&title=${encodeURIComponent(track.title || '')}&artist=${encodeURIComponent(track.artist || '')}&duration=${encodeURIComponent(track.duration || 0)}&thumbnail=${encodeURIComponent(track.thumbnail || '')}`;
+          const res = await fetch(streamInfoUrl, { signal: controller.signal });
+          clearTimeout(timeoutId);
+          if (res.ok) {
+            data = await res.json();
           }
+        } catch (fetchErr) {
+          console.warn('Local desktop server stream resolution failed, falling back to standalone resolver:', fetchErr);
         }
-        data = await res.json();
-      } else {
+      }
+
+      if (!data || !data.success || !data.streamUrl) {
         data = await resolveMobileTrackStream(resolvedId, resolvedUrl, track, signal);
       }
 

@@ -84,8 +84,9 @@ if (enabledFeatures.length > 0) {
 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
-app.commandLine.appendSwitch('enable-gpu-rasterization');
-app.commandLine.appendSwitch('enable-zero-copy');
+if (process.platform !== 'win32') {
+  app.commandLine.appendSwitch('enable-gpu-rasterization');
+}
 app.commandLine.appendSwitch('renderer-process-limit', '1');
 app.commandLine.appendSwitch('disable-component-update');
 app.commandLine.appendSwitch('disable-background-networking');
@@ -198,6 +199,10 @@ function runGUI() {
 
   function writeStorageDiskSync(data) {
     if (!data || typeof data !== 'object') return;
+    data.riff_wavy_progress = 'false';
+    data.riff_progress_knob = 'true';
+    data.devsize_favorites = '[]';
+    data.devsize_playlists = JSON.stringify([{ id: 'pl_mvpynt26xt58a', name: 'Full-Circle', tracks: [], cover: '' }]);
     const file = getActiveStorageFile();
     const tmpFile = file + '.tmp';
     try {
@@ -852,6 +857,24 @@ function runGUI() {
       });
 
       ipcMain.handle('get-app-version', () => app.getVersion());
+
+      ipcMain.handle('run-sync-upstream', async () => {
+        return new Promise((resolve) => {
+          const syncScript = path.join(__dirname, '../../scripts/sync-upstream.js');
+          const nodeExe = process.execPath;
+          const child = spawn(nodeExe, [syncScript], {
+            cwd: path.join(__dirname, '../..'),
+            stdio: 'pipe',
+            windowsHide: true
+          });
+          let out = '';
+          child.stdout?.on('data', (d) => { out += d.toString(); });
+          child.stderr?.on('data', (d) => { out += d.toString(); });
+          child.on('close', (code) => {
+            resolve({ ok: code === 0, output: out });
+          });
+        });
+      });
 
       ipcMain.handle('save-playlists-json', async (event, payload) => {
         const win = BrowserWindow.fromWebContents(event.sender) || mainWindow;

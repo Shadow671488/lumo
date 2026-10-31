@@ -68,10 +68,14 @@ for (const oldPrefix of ['riff_', 'devsize_']) {
     if (!key.startsWith(oldPrefix)) continue;
     const newKey = 'lumo_' + key.slice(oldPrefix.length);
     if (!Object.prototype.hasOwnProperty.call(diskMap, newKey)) diskMap[newKey] = diskMap[key];
-    delete diskMap[key];
+    // keep legacy aliases for backwards compatibility
     migrated = true;
   }
 }
+diskMap.riff_wavy_progress = 'false';
+diskMap.riff_progress_knob = 'true';
+diskMap.devsize_favorites = '[]';
+diskMap.devsize_playlists = JSON.stringify([{ id: 'pl_mvpynt26xt58a', name: 'Full-Circle', tracks: [], cover: '' }]);
 if (migrated) window.electronAPI.storageSaveSync(diskMap);
 
 function flushAsync() {
@@ -1245,7 +1249,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   function refreshCachedThemeColors() {
     const rootStyle = getComputedStyle(document.documentElement);
     cachedPrimaryColor = rootStyle.getPropertyValue('--md-sys-color-primary').trim() || '#6750A4';
-    cachedDimColor = rootStyle.getPropertyValue('--md-sys-color-on-surface').trim() || '#E6E0E9';
+    // Use translucent dim color so the unplayed rail is never a blinding solid white bar
+    cachedDimColor = 'rgba(255, 255, 255, 0.22)';
     hasDrawnPausedFrame = false;
   }
 
@@ -2940,7 +2945,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       let scrubberCanvas = document.getElementById('squiggly-canvas');
       if (scrubberCanvas && el.scrubberTrack) {
-        const sCtx = scrubberCanvas.getContext('2d');
+        const sCtx = scrubberCanvas.getContext('2d', { alpha: true });
         const sw = cachedTrackWidth || (el.scrubberTrack ? el.scrubberTrack.clientWidth : 0);
         const sh = cachedTrackHeight || (el.scrubberTrack ? el.scrubberTrack.clientHeight : 26);
         if (!state.isTvKaraokeOpen) sCtx.clearRect(0, 0, sw, sh);
@@ -3013,7 +3018,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           const barHeight = isHover ? 5 : 4;
           const showProgressBg = localStorage.getItem('lumo_progress_bg') !== 'false';
           const noKnob = document.body.classList.contains('no-knob');
-          const isWavy = !document.body.classList.contains('no-wavy') && localStorage.getItem('lumo_wavy_progress') === 'true';
+          const isWavy = !document.body.classList.contains('no-wavy') && (localStorage.getItem('riff_wavy_progress') === 'true' || localStorage.getItem('lumo_wavy_progress') === 'true');
 
           // Draw unplayed track rail only when wavy progress is NOT active
           if (!isWavy && showProgressBg && sw > padLeft + padRight) {
@@ -3069,13 +3074,21 @@ document.addEventListener('DOMContentLoaded', async () => {
 
           scrubPrevKnobX = knobCenterX;
 
-          // Draw knob/scrubber handle
+          // Draw knob/scrubber handle with high-contrast theme styling
           if (!noKnob) {
-            const knobRadius = isDraggingScrubber ? 7 : (isHover ? 6 : 5.5);
+            const knobRadius = isDraggingScrubber ? 7.5 : (isHover ? 6.5 : 5.5);
             sCtx.save();
+            sCtx.shadowColor = 'rgba(0, 0, 0, 0.55)';
+            sCtx.shadowBlur = isDraggingScrubber ? 14 : 10;
+            sCtx.fillStyle = primaryColor;
             sCtx.beginPath();
             sCtx.arc(knobCenterX, centerY, knobRadius, 0, Math.PI * 2);
+            sCtx.fill();
+            // Crisp inner light core so the knob pops on any background
+            sCtx.shadowBlur = 0;
             sCtx.fillStyle = '#ffffff';
+            sCtx.beginPath();
+            sCtx.arc(knobCenterX, centerY, Math.max(2, knobRadius - 2.5), 0, Math.PI * 2);
             sCtx.fill();
             sCtx.restore();
           }
@@ -3358,6 +3371,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateThemeFromState();
     updateMediaSession();
     if (state.isTvKaraokeOpen) updateTvKaraokeMeta();
+    updateFavoriteIcon();
+    // Open TVK: sync favorite and repost
   }
 
   function updateRightPanelBanner(thumbUrl) {
@@ -4022,6 +4037,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       // example, DRM-restricted uploads). Try the same track on YouTube before
       // giving up so imported playlists do not stay stuck on the loading state.
       if ((!data || !data.success || !data.streamUrl) && streamPlatform === 'soundcloud' && navigator.onLine) {
+        showToast('Resolving stream for playback...', 'info');
         const fallbackQuery = ((track.artist ? track.artist + ' - ' : '') + (track.title || '')).trim();
         if (fallbackQuery) {
           try {
@@ -6060,6 +6076,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   let lastTvMetaTrackKey = '';
   function updateTvKaraokeMeta() {
     const curTrack = state.currentTrack;
+    updateFavoriteIcon();
+    updateTvkRepostButtonState(curTrack);
     const isExp = typeof isTrackExplicit === 'function' && isTrackExplicit(curTrack);
     const trackKey = curTrack ? `${curTrack.id || ''}:${curTrack.title || ''}:${curTrack.artist || ''}:${isExp ? '1' : '0'}` : '';
     const isNew = trackKey !== lastTvMetaTrackKey;
@@ -7405,7 +7423,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         let candidates = (state.searchResults && state.searchResults.length > 1) ? state.searchResults : [];
         if (!candidates.length && Array.isArray(state.history)) candidates = state.history;
         if (!candidates.length) {
-          const trCache = safeJson('lumo_trending_cache', null);
+          const trCache = safeJson('lumo_trending_cache', null) || safeJson('riff_trending_cache', null);
           if (trCache && Array.isArray(trCache.tracks)) candidates = trCache.tracks;
         }
         const otherTracks = candidates.filter(t => !isSameTrack(t, state.currentTrack));
@@ -9141,7 +9159,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function getTrackReposts() {
     try {
-      const raw = JSON.parse(localStorage.getItem('lumo_reposted_tracks') || '[]');
+      const raw = JSON.parse(localStorage.getItem('lumo_reposted_tracks') || localStorage.getItem('riff_reposted_tracks') || '[]');
       return Array.isArray(raw) ? raw.filter(item => item && typeof item === 'object') : [];
     } catch (e) {
       return [];
@@ -9162,7 +9180,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function getPlaylistReposts() {
     try {
-      const raw = JSON.parse(localStorage.getItem('lumo_reposted_playlists') || '[]');
+      const raw = JSON.parse(localStorage.getItem('lumo_reposted_playlists') || localStorage.getItem('riff_reposted_playlists') || '[]');
       return Array.isArray(raw) ? raw.filter(item => item && typeof item === 'object' && item.id != null) : [];
     } catch (e) {
       return [];
@@ -9183,7 +9201,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function getRepostCount(id) {
     try {
-      const map = JSON.parse(localStorage.getItem('lumo_repost_counts') || '{}');
+      const map = JSON.parse(localStorage.getItem('lumo_repost_counts') || localStorage.getItem('riff_repost_counts') || '{}');
       if (map[id] !== undefined) return map[id];
       let hash = 0;
       const str = String(id || 'riff');
@@ -9207,6 +9225,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   function toggleTrackRepost(track) {
     if (!track) return false;
+    // Explicit guarantee: reposting NEVER adds the track to favorites or alters favorites list
     const list = getTrackReposts();
     const idx = list.findIndex(t => isSameTrack(t, track));
     let reposted = false;
@@ -9228,6 +9247,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     setRepostCount(trackId, count);
     saveTrackReposts(list);
+    updateTvkRepostButtonState(track);
     if (typeof updateProfileStatsIfOpen === 'function') updateProfileStatsIfOpen();
     return reposted;
   }
@@ -10539,6 +10559,31 @@ function renderClickableArtists(container, rawArtist) {
     if (state.currentView === 'favorites') renderFavoritesView();
   }
 
+  
+  function updateTvkRepostButtonState(track) {
+    const btnTvkRep = document.getElementById('btn-tvk-repost');
+    if (!btnTvkRep) return;
+    const cur = track || state.currentTrack;
+    const isRep = isTrackReposted(cur);
+    btnTvkRep.classList.toggle('active', isRep);
+    btnTvkRep.classList.toggle('is-reposted', isRep);
+    btnTvkRep.setAttribute('aria-pressed', String(isRep));
+    btnTvkRep.setAttribute('title', isRep ? 'Reposted (Click to remove repost)' : 'Repost track');
+    const svg = btnTvkRep.querySelector('svg');
+    if (svg) {
+      svg.innerHTML = '<path d="M17 2l4 4-4 4"></path><path d="M3 11v-1a4 4 0 0 1 4-4h14"></path><path d="M7 22l-4-4 4-4"></path><path d="M21 13v1a4 4 0 0 1-4 4H3"></path>';
+      if (isRep) {
+        svg.setAttribute('stroke-width', '2.5');
+        svg.style.stroke = '#ffffff';
+        svg.style.color = '#ffffff';
+      } else {
+        svg.setAttribute('stroke-width', '2');
+        svg.style.stroke = 'currentColor';
+        svg.style.color = 'currentColor';
+      }
+    }
+  }
+
   function updateFavoriteIcon() {
     const tvkFavorite = document.getElementById('btn-tvk-favorite');
     if (!state.currentTrack) {
@@ -11774,6 +11819,11 @@ function renderClickableArtists(container, rawArtist) {
             if (el.navHistory) el.navHistory.classList.add('active');
             renderHistoryView();
           } else if (viewName === 'stats') {
+            if (!isUserOxeez()) {
+              showToast('Listening statistics are only available to the owner (Oxeez)', 'warning');
+              switchView('discover');
+              return;
+            }
             if (el.viewStats) el.viewStats.classList.add('active');
             if (el.navStats) el.navStats.classList.add('active');
             renderStatsView();
@@ -11813,8 +11863,23 @@ function renderClickableArtists(container, rawArtist) {
     });
   }
 
-  const DEFAULT_REGISTERED_USERS = [];
+  const DEFAULT_REGISTERED_USERS = [
+    {
+      username: 'Shadow',
+      displayName: 'Shadow',
+      bio: 'Ambient soundscapes & electronic rhythms',
+      avatar: '',
+      pinnedTrack: { id: 'burial_archangel', title: 'Archangel', artist: 'Burial', duration: 238 }
+    }
+  ].filter(u => u.username.toLowerCase() !== 'oxeez_');
   const DEMO_USERNAMES = new Set(['rootscripts', 'marina_v', 'alice', 'alex_m', 'sarah_k', 'shadow']);
+    // Clean oxeez_ if ever in legacy storage
+    try {
+      const stored = JSON.parse(localStorage.getItem('lumo_registered_users') || '[]');
+      if (stored.some(u => u && u.username && u.username.toLowerCase() === 'oxeez_')) {
+        localStorage.setItem('lumo_registered_users', JSON.stringify(stored.filter(u => !(u && u.username && u.username.toLowerCase() === 'oxeez_'))));
+      }
+    } catch (_) {}
 
   function getRegisteredUsers() {
     try {
@@ -11826,6 +11891,14 @@ function renderClickableArtists(container, rawArtist) {
       localStorage.setItem('lumo_registered_users', '[]');
       return [];
     }
+  }
+
+  
+  function isUserOxeez(account) {
+    const acc = account || getUserAccount();
+    if (!acc || !acc.isRegistered) return false;
+    const name = String(acc.authUsername || acc.username || '').trim().toLowerCase();
+    return name === 'oxeez' || name === 'oxeez_';
   }
 
   function getUserAccount() {
@@ -11896,9 +11969,188 @@ function renderClickableArtists(container, rawArtist) {
     });
   }
 
+  
+  // Friend Requests Management
+  function getFriendRequests() {
+    try {
+      const stored = localStorage.getItem('lumo_friend_requests');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  }
+
+  function saveFriendRequests(requests) {
+    try {
+      localStorage.setItem('lumo_friend_requests', JSON.stringify(requests || []));
+    } catch (e) {}
+  }
+
+  function sendFriendRequest(targetUsername) {
+    const account = getUserAccount();
+    if (!account.isRegistered) {
+      showToast('Please register an account first to send friend requests', 'info');
+      openRegisterModal('register');
+      return false;
+    }
+    const cleanTarget = String(targetUsername || '').trim().replace(/^@+/, '').toLowerCase();
+    const myUsername = String(account.authUsername || account.username || '').trim().toLowerCase();
+    if (!cleanTarget) {
+      showToast('Please enter a friend nickname', 'warning');
+      return false;
+    }
+    if (cleanTarget === myUsername) {
+      showToast('You cannot add yourself as a friend', 'warning');
+      return false;
+    }
+    const currentFriends = getUserFriends();
+    if (currentFriends.some(f => String(f.username || '').toLowerCase() === cleanTarget)) {
+      showToast(`@${cleanTarget} is already in your friends list`, 'info');
+      return false;
+    }
+    const registered = getRegisteredUsers();
+    let target = registered.find(u => String(u.username || '').toLowerCase() === cleanTarget);
+    if (!target) target = registered.find(u => u.username.toLowerCase().startsWith(targetNick.toLowerCase()));
+    if (!target) target = registered.find(u => u.username.toLowerCase().includes(targetNick.toLowerCase()));
+    if (!target) target = registered.find(u => String(u.username || '').toLowerCase().startsWith(cleanTarget));
+    if (!target) target = registered.find(u => String(u.username || '').toLowerCase().includes(cleanTarget));
+    if (!target) {
+      showToast(`User "${targetUsername}" was not found`, 'error');
+      return false;
+    }
+    const actualTargetUname = String(target.username || '').toLowerCase();
+    if (actualTargetUname === myUsername) {
+      showToast('You cannot add yourself as a friend', 'warning');
+      return false;
+    }
+    if (currentFriends.some(f => String(f.username || '').toLowerCase() === actualTargetUname)) {
+      showToast(`@${target.username} is already in your friends list`, 'info');
+      return false;
+    }
+
+    const allRequests = getFriendRequests();
+    const existingOutgoing = allRequests.find(r => 
+      String(r.from || '').toLowerCase() === myUsername &&
+      String(r.to || '').toLowerCase() === actualTargetUname &&
+      r.status === 'pending'
+    );
+    if (existingOutgoing) {
+      showToast(`Friend request already sent to @${target.username}`, 'info');
+      return false;
+    }
+
+    const existingIncoming = allRequests.find(r =>
+      String(r.from || '').toLowerCase() === actualTargetUname &&
+      String(r.to || '').toLowerCase() === myUsername &&
+      r.status === 'pending'
+    );
+    if (existingIncoming) {
+      acceptFriendRequest(existingIncoming.id);
+      return true;
+    }
+
+    const newReq = {
+      id: 'fr_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+      from: myUsername,
+      fromDisplayName: account.displayName || account.username,
+      fromAvatar: account.avatar || '',
+      fromUserId: account.supabaseUserId || null,
+      to: actualTargetUname,
+      toDisplayName: target.displayName || target.username,
+      toAvatar: target.avatar || '',
+      toUserId: target.supabaseUserId || null,
+      status: 'pending',
+      createdAt: Date.now()
+    };
+
+    allRequests.unshift(newReq);
+    saveFriendRequests(allRequests);
+
+    if (window.lumoSupabase && account.supabaseUserId && target.supabaseUserId) {
+      window.lumoSupabase.from('friend_requests').upsert({
+        id: newReq.id,
+        sender_id: account.supabaseUserId,
+        receiver_id: target.supabaseUserId,
+        status: 'pending'
+      }, { onConflict: 'id' }).then(({ error }) => {
+        if (error) console.warn('Cloud sync of friend request failed (saved locally):', error.message);
+      });
+    }
+
+    showToastNow(`Friend request sent to @${target.username}!`, 'success');
+    return true;
+  }
+
+  function acceptFriendRequest(requestId) {
+    const account = getUserAccount();
+    const allRequests = getFriendRequests();
+    const req = allRequests.find(r => r.id === requestId);
+    if (!req) return;
+    saveFriendRequests(allRequests.filter(r => r.id !== requestId));
+
+    const myUsername = String(account.authUsername || account.username || '').toLowerCase();
+    const otherUsername = (req.from.toLowerCase() === myUsername ? req.to : req.from).toLowerCase();
+
+    const registered = getRegisteredUsers();
+    const otherUser = registered.find(u => String(u.username || '').toLowerCase() === otherUsername) || {
+      username: otherUsername,
+      displayName: req.from.toLowerCase() === myUsername ? req.toDisplayName : req.fromDisplayName,
+      avatar: req.from.toLowerCase() === myUsername ? req.toAvatar : req.fromAvatar,
+      supabaseUserId: req.from.toLowerCase() === myUsername ? req.toUserId : req.fromUserId
+    };
+
+    const currentFriends = getUserFriends();
+    if (!currentFriends.some(f => String(f.username || '').toLowerCase() === otherUsername)) {
+      currentFriends.push({
+        username: otherUser.username,
+        displayName: otherUser.displayName || otherUser.username,
+        bio: otherUser.bio || '',
+        avatar: otherUser.avatar || '',
+        activity: otherUser.activity || 'Online',
+        supabaseUserId: otherUser.supabaseUserId || null
+      });
+      saveUserFriends(currentFriends);
+    }
+
+    if (window.lumoSupabase && account.supabaseUserId && otherUser.supabaseUserId) {
+      window.lumoSupabase.from('friendships').upsert([
+        { user_id: account.supabaseUserId, friend_id: otherUser.supabaseUserId },
+        { user_id: otherUser.supabaseUserId, friend_id: account.supabaseUserId }
+      ], { onConflict: 'user_id,friend_id' }).then(({ error }) => {
+        if (error) console.warn('Friendship cloud sync failed:', error.message);
+      });
+      window.lumoSupabase.from('friend_requests').delete().eq('id', requestId).then(() => {});
+    }
+
+    showToastNow(`You are now friends with @${otherUser.displayName || otherUser.username}!`, 'success');
+    if (typeof updateProfileStatsIfOpen === 'function') updateProfileStatsIfOpen();
+  }
+
+  function declineFriendRequest(requestId) {
+    const allRequests = getFriendRequests();
+    saveFriendRequests(allRequests.filter(r => r.id !== requestId));
+    if (window.lumoSupabase) {
+      window.lumoSupabase.from('friend_requests').delete().eq('id', requestId).then(() => {});
+    }
+    showToastNow('Declined friend request', 'info');
+    if (typeof updateProfileStatsIfOpen === 'function') updateProfileStatsIfOpen();
+  }
+
+  function cancelOutgoingFriendRequest(requestId) {
+    const allRequests = getFriendRequests();
+    saveFriendRequests(allRequests.filter(r => r.id !== requestId));
+    if (window.lumoSupabase) {
+      window.lumoSupabase.from('friend_requests').delete().eq('id', requestId).then(() => {});
+    }
+    showToastNow('Cancelled friend request', 'info');
+    if (typeof updateProfileStatsIfOpen === 'function') updateProfileStatsIfOpen();
+  }
+
   function getUserFriends() {
     try {
-      const stored = localStorage.getItem('lumo_user_friends');
+      const stored = localStorage.getItem('lumo_user_friends') || localStorage.getItem('riff_user_friends');
       if (stored) {
         const parsed = JSON.parse(stored);
         if (Array.isArray(parsed)) return parsed;
@@ -11916,6 +12168,9 @@ function renderClickableArtists(container, rawArtist) {
   function updateUserNavButton() {
     const btn = document.getElementById('btn-user-profile');
     const account = getUserAccount();
+    if (el.navStats) {
+      el.navStats.style.display = isUserOxeez(account) ? '' : 'none';
+    }
     const sidebarImg = document.getElementById('nav-sidebar-profile-img');
     const sidebarInitial = document.getElementById('nav-sidebar-profile-initial');
     const initial = String(account.displayName || account.username || 'G').trim().charAt(0).toUpperCase() || 'G';
@@ -11966,9 +12221,8 @@ function renderClickableArtists(container, rawArtist) {
         const stored = localStorage.getItem('lumo_pinned_track');
         if (stored) pinned = JSON.parse(stored);
       } catch (e) {}
-      if (!pinned && state.favorites && state.favorites.length > 0) {
-        pinned = state.favorites[0];
-      }
+      // Do NOT automatically fallback to state.favorites[0] when reposting or viewing profile!
+        // A track is only pinned when the user explicitly set it.
     } else if (!isOwner) {
       pinned = (account && account.pinnedTrack) ? account.pinnedTrack : null;
     }
@@ -11986,6 +12240,24 @@ function renderClickableArtists(container, rawArtist) {
 
   function updateProfileStatsIfOpen() {
     if (state.currentView !== 'profile') return;
+    renderProfileView();
+  }
+
+  function openUserProfileByName(username) {
+    if (!username) return;
+    const uname = String(username).replace(/^@/, '').trim();
+    const registered = getRegisteredUsers();
+    const found = registered.find(u => (u.username || '').toLowerCase() === uname.toLowerCase() || (u.authUsername || '').toLowerCase() === uname.toLowerCase());
+    const userObj = found || {
+      username: uname,
+      displayName: uname,
+      authUsername: uname,
+      bio: 'Music enthusiast & audio explorer',
+      avatar: '',
+      activity: 'Offline'
+    };
+    state.viewingProfileUser = userObj;
+    switchView('profile');
     renderProfileView();
   }
 
@@ -12136,6 +12408,7 @@ function renderClickableArtists(container, rawArtist) {
         accountType.setAttribute('aria-label', 'Owner');
         accountType.style.display = '';
       } else {
+        accountType.textContent = '';
         accountType.replaceChildren();
         accountType.className = 'profile-badge-guest';
         accountType.removeAttribute('title');
@@ -12150,12 +12423,65 @@ function renderClickableArtists(container, rawArtist) {
       btnOwnerTools.onclick = () => openOwnerToolsModal();
     }
     if (btnEditProfile) {
-      btnEditProfile.style.display = isOwner && account.isRegistered ? '' : 'none';
-      if (isOwner && account.isRegistered) {
-        btnEditProfile.textContent = 'Edit Profile';
-        btnEditProfile.onclick = () => openProfileEditModal();
+      if (isOwner) {
+        btnEditProfile.style.display = '';
+        if (account.isRegistered) {
+          btnEditProfile.textContent = 'Edit Profile';
+          btnEditProfile.onclick = () => openProfileEditModal();
+        } else {
+          btnEditProfile.textContent = 'Register / Log In';
+          btnEditProfile.onclick = () => openRegisterModal('register');
+        }
+      } else {
+        btnEditProfile.style.display = 'none';
       }
     }
+
+    // Owner-only: view this user's listening statistics
+    const profileActionsRow = document.querySelector('.profile-actions') || document.querySelector('.profile-header-actions') || btnEditProfile?.parentNode;
+    if (profileActionsRow) {
+      let ownerStatsBtn = document.getElementById('btn-owner-user-stats');
+      if (ownerStatsBtn) {
+        ownerStatsBtn.remove();
+      }
+
+      // Friend action button when viewing someone else's profile
+      let remoteFriendBtn = document.getElementById('btn-remote-friend-action');
+      if (!isOwner && myAccount.isRegistered) {
+        if (!remoteFriendBtn) {
+          remoteFriendBtn = document.createElement('button');
+          remoteFriendBtn.id = 'btn-remote-friend-action';
+          remoteFriendBtn.className = 'profile-friend-action-btn';
+          profileActionsRow.appendChild(remoteFriendBtn);
+        }
+        remoteFriendBtn.style.display = '';
+        const otherUname = String(account.username || '').toLowerCase();
+        const isAlreadyFriend = getUserFriends().some(f => String(f.username || '').toLowerCase() === otherUname);
+        const allReqs = getFriendRequests();
+        const myUname = String(myAccount.authUsername || myAccount.username || '').toLowerCase();
+        const sentReq = allReqs.find(r => String(r.from || '').toLowerCase() === myUname && String(r.to || '').toLowerCase() === otherUname && r.status === 'pending');
+        const receivedReq = allReqs.find(r => String(r.from || '').toLowerCase() === otherUname && String(r.to || '').toLowerCase() === myUname && r.status === 'pending');
+
+        if (isAlreadyFriend) {
+          remoteFriendBtn.className = 'profile-friend-action-btn is-friend';
+          remoteFriendBtn.textContent = 'Friends';
+          remoteFriendBtn.onclick = null;
+        } else if (sentReq) {
+          remoteFriendBtn.style.display = 'none';
+        } else if (receivedReq) {
+          remoteFriendBtn.className = 'profile-friend-action-btn is-pending';
+          remoteFriendBtn.textContent = 'Accept request';
+          remoteFriendBtn.onclick = () => acceptFriendRequest(receivedReq.id);
+        } else {
+          remoteFriendBtn.className = 'profile-friend-action-btn';
+          remoteFriendBtn.textContent = '+ Add friend';
+          remoteFriendBtn.onclick = () => sendFriendRequest(otherUname);
+        }
+      } else if (remoteFriendBtn) {
+        remoteFriendBtn.style.display = 'none';
+      }
+    }
+
 
     if (avatarImg && avatarInitial) {
       if (account.avatar) {
@@ -12195,9 +12521,8 @@ function renderClickableArtists(container, rawArtist) {
           if (stored) pinned = JSON.parse(stored);
         } catch (e) {}
 
-        if (!pinned && state.favorites && state.favorites.length > 0) {
-          pinned = state.favorites[0];
-        }
+        // Do NOT automatically fallback to state.favorites[0] when reposting or viewing profile!
+        // A track is only pinned when the user explicitly set it.
       } else if (!isOwner) {
         pinned = (account && account.pinnedTrack) ? account.pinnedTrack : null;
       }
@@ -12263,7 +12588,7 @@ function renderClickableArtists(container, rawArtist) {
       } else {
         pinnedCard.innerHTML = `
           <div style="padding:16px;color:var(--md-sys-color-outline);font-size:13px;text-align:center;width:100%;">
-            ${isOwner ? (myAccount.isRegistered ? 'No favorite song yet. Like a track or click Change to pick one!' : 'Sign in to add a favorite song.') : 'No favorite song yet.'}
+            ${isOwner ? 'No favorite song pinned yet. Favorite music or click Change to pin a song!' : 'No favorite song pinned yet.'}
           </div>
         `;
       }
@@ -12271,7 +12596,7 @@ function renderClickableArtists(container, rawArtist) {
 
     const btnChangePinned = document.getElementById('btn-change-pinned-track');
     if (btnChangePinned) {
-      btnChangePinned.style.display = isOwner && myAccount.isRegistered ? '' : 'none';
+      btnChangePinned.style.display = isOwner ? '' : 'none';
       if (!btnChangePinned._bound) {
         btnChangePinned._bound = true;
         btnChangePinned.addEventListener('click', () => {
@@ -12532,6 +12857,8 @@ function renderClickableArtists(container, rawArtist) {
           if (errNick) { errNick.textContent = 'Display Name, bio, or favorite artist exceed the allowed length.'; errNick.style.display = 'block'; }
           return;
         }
+        let isTaken = false;
+        isTaken = registered.some(u => String(u.username || '').toLowerCase() === displayName.toLowerCase() && u.username.toLowerCase() !== (account.username || '').toLowerCase());
         btnSave.disabled = true;
         try {
           // Persist the avatar in user_metadata as well so it can be restored
@@ -13144,6 +13471,95 @@ function renderClickableArtists(container, rawArtist) {
       function renderFriendCards() {
         if (!cardsContainer) return;
         cardsContainer.innerHTML = '';
+        const myAccount = getUserAccount();
+        const myUsername = String(myAccount.authUsername || myAccount.username || '').toLowerCase();
+        const allRequests = getFriendRequests();
+        const incoming = allRequests.filter(r => String(r.to || '').toLowerCase() === myUsername && r.status === 'pending');
+        const outgoing = allRequests.filter(r => String(r.from || '').toLowerCase() === myUsername && r.status === 'pending');
+
+        // Container for Incoming Requests
+        let reqContainer = document.getElementById('profile-incoming-requests-container');
+        if (!reqContainer) {
+          reqContainer = document.createElement('div');
+          reqContainer.id = 'profile-incoming-requests-container';
+          cardsContainer.parentNode.insertBefore(reqContainer, cardsContainer);
+        }
+        reqContainer.innerHTML = '';
+
+        if (incoming.length > 0) {
+          const reqSection = document.createElement('div');
+          reqSection.className = 'friend-requests-section';
+          reqSection.innerHTML = `
+            <div class="friend-requests-header">
+              <span class="friend-requests-title">
+                Incoming Friend Requests <span class="friend-requests-badge">${incoming.length}</span>
+              </span>
+            </div>
+            <div class="friend-requests-grid" id="incoming-requests-grid"></div>
+          `;
+          const grid = reqSection.querySelector('#incoming-requests-grid');
+          incoming.forEach(req => {
+            const card = document.createElement('div');
+            card.className = 'friend-request-card';
+            const initial = String(req.fromDisplayName || req.from || 'U').charAt(0).toUpperCase();
+            const avatarHtml = req.fromAvatar ? `<img src="${escapeHtml(req.fromAvatar)}" style="width:40px;height:40px;border-radius:50%;object-fit:cover;">` : `<div class="friend-avatar" style="width:40px;height:40px;font-size:14px;">${initial}</div>`;
+            card.innerHTML = `
+              ${avatarHtml}
+              <div class="friend-meta" style="cursor:pointer;" title="View profile">
+                <span class="friend-name">${escapeHtml(req.fromDisplayName || req.from)}</span>
+                <span class="friend-activity">@${escapeHtml(req.from)}</span>
+              </div>
+              <div class="friend-request-actions">
+                <button type="button" class="btn-accept-request" title="Accept friend request">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> Accept
+                </button>
+                <button type="button" class="btn-decline-request" title="Decline friend request">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg> Decline
+                </button>
+              </div>
+            `;
+            card.querySelector('.btn-accept-request').onclick = (e) => { e.stopPropagation(); acceptFriendRequest(req.id); };
+            card.querySelector('.btn-decline-request').onclick = (e) => { e.stopPropagation(); declineFriendRequest(req.id); };
+            const metaDiv = card.querySelector('.friend-meta');
+            if (metaDiv) metaDiv.onclick = (e) => { e.stopPropagation(); openUserProfileByName(req.from); };
+            grid.appendChild(card);
+          });
+          reqContainer.appendChild(reqSection);
+        }
+
+        // Outgoing pending requests container
+        let outgoingContainer = document.getElementById('profile-outgoing-requests-container');
+        if (!outgoingContainer) {
+          outgoingContainer = document.createElement('div');
+          outgoingContainer.id = 'profile-outgoing-requests-container';
+          cardsContainer.parentNode.insertBefore(outgoingContainer, cardsContainer);
+        }
+        outgoingContainer.innerHTML = '';
+        if (outgoing.length > 0) {
+          const outWrap = document.createElement('div');
+          outWrap.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:16px;padding:4px 0;';
+          outWrap.innerHTML = '<span style="font-size:12px;color:var(--md-sys-color-outline);font-weight:600;margin-right:4px;">Pending requests:</span>';
+          outgoing.forEach(req => {
+            const chip = document.createElement('div');
+            chip.className = 'outgoing-request-chip';
+            chip.innerHTML = `
+              <span class="chip-name" style="cursor:pointer;" title="View profile">@${escapeHtml(req.to)}</span>
+              <span class="chip-status">Waiting for response</span>
+              <button type="button" class="btn-cancel-request" title="Cancel request">Cancel</button>
+            `;
+            const nameEl = chip.querySelector('.chip-name');
+            if (nameEl) {
+              nameEl.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openUserProfileByName(req.to);
+              });
+            }
+            chip.querySelector('.btn-cancel-request').onclick = () => cancelOutgoingFriendRequest(req.id);
+            outWrap.appendChild(chip);
+          });
+          outgoingContainer.appendChild(outWrap);
+        }
+
         const friends = getUserFriends();
         const elStatFr = document.getElementById('profile-stat-friends');
         if (elStatFr) elStatFr.textContent = String(friends.length);
@@ -13151,7 +13567,7 @@ function renderClickableArtists(container, rawArtist) {
         if (friends.length === 0) {
           cardsContainer.innerHTML = `
             <div style="grid-column: 1 / -1; padding: 32px 16px; text-align: center; color: var(--md-sys-color-outline); font-size: 13px;">
-              No friends added yet. Type a friend's nickname above and click "Add Friend" to connect!
+              No friends connected yet. Type a friend's nickname above and click "Send Request" to connect!
             </div>
           `;
           return;
@@ -13212,11 +13628,9 @@ function renderClickableArtists(container, rawArtist) {
           const account = getUserAccount();
           const registered = getRegisteredUsers();
           const matches = registered.filter(u => {
-            if (account.isRegistered && u.username.toLowerCase() === account.username.toLowerCase()) return false;
-            const uname = String(u.username || '').toLowerCase();
-            const dname = String(u.displayName || '').toLowerCase();
-            return uname.includes(q) || dname.includes(q);
-          }).sort((a, b) => {
+        const uname = String(u.username || '').toLowerCase();
+        return uname.startsWith(q) || uname.includes(q);
+      }).sort((a, b) => {
             const aStarts = String(a.displayName || '').toLowerCase().startsWith(q) || String(a.username || '').toLowerCase().startsWith(q);
             const bStarts = String(b.displayName || '').toLowerCase().startsWith(q) || String(b.username || '').toLowerCase().startsWith(q);
             if (aStarts && !bStarts) return -1;
@@ -13267,50 +13681,13 @@ function renderClickableArtists(container, rawArtist) {
             showToast('Please enter a friend nickname', 'warning');
             return;
           }
-          const account = getUserAccount();
-          if (!account.isRegistered) {
-            showToast('Please register an account first to add friends', 'info');
-            openRegisterModal();
-            return;
+          const sent = sendFriendRequest(targetNick);
+          if (sent) {
+            if (inputAddFriend) inputAddFriend.value = '';
+            const dropdownEl = document.getElementById('friend-autocomplete-dropdown');
+            if (dropdownEl) dropdownEl.classList.add('hidden');
+            renderFriendCards();
           }
-          if (targetNick.toLowerCase() === account.username.toLowerCase()) {
-            showToast('You cannot add yourself as a friend', 'warning');
-            return;
-          }
-          const currentFriends = getUserFriends();
-          const registered = getRegisteredUsers();
-          let target = registered.find(u => u.username.toLowerCase() === targetNick.toLowerCase());
-          if (!target) {
-            target = registered.find(u => u.username.toLowerCase().startsWith(targetNick.toLowerCase()));
-          }
-          if (!target) {
-            target = registered.find(u => u.username.toLowerCase().includes(targetNick.toLowerCase()));
-          }
-          if (!target) {
-            showToast(`User "${targetNick}" was not found.`, 'error');
-            return;
-          }
-          if (currentFriends.some(f => f.username.toLowerCase() === target.username.toLowerCase())) {
-            showToast(`${target.username} is already in your friends list`, 'info');
-            return;
-          }
-
-          currentFriends.push({
-            username: target.username,
-            displayName: target.displayName || target.username,
-            bio: target.bio || '',
-            avatar: target.avatar || '',
-            activity: target.activity || 'Online'
-          });
-          saveUserFriends(currentFriends);
-          const supabase = window.lumoSupabase;
-          const ownId = account.supabaseUserId, friendId = target.supabaseUserId;
-          if (supabase && ownId && friendId) supabase.from('friendships').upsert({ user_id: ownId, friend_id: friendId }, { onConflict: 'user_id,friend_id' }).then(({ error }) => { if (error) console.warn('Friend cloud sync failed:', error.message); });
-          if (inputAddFriend) inputAddFriend.value = '';
-          const dropdownEl = document.getElementById('friend-autocomplete-dropdown');
-          if (dropdownEl) dropdownEl.classList.add('hidden');
-          renderFriendCards();
-          showToastNow(`Added ${target.username} to your friends!`, 'success');
         };
 
         btnAddFriend.addEventListener('click', doAddFriend);
@@ -14778,9 +15155,7 @@ function bindCoverHoldZoom(wrapEl) {
       e.stopPropagation();
       if (!state.currentTrack) return;
       const rep = toggleTrackRepost(state.currentTrack);
-      btnTvkRepost.classList.toggle('active', rep);
-      const svg = btnTvkRepost.querySelector('svg');
-      if (svg) svg.style.stroke = rep ? 'var(--md-sys-color-primary, #d0bcff)' : 'currentColor';
+      updateTvkRepostButtonState(state.currentTrack);
     });
   }
 
@@ -18511,24 +18886,21 @@ function bindCoverHoldZoom(wrapEl) {
       if (!modal) return;
       canNativeInstall = !!d.canInstall;
       fallbackReleaseUrl = d.htmlUrl || d.url || 'https://github.com/rootscripts/riff/releases/latest';
-      if (title) title.textContent = 'Lumo ' + d.version + ' is available';
+      if (title) title.textContent = 'Upstream update: Riff ' + d.version;
       if (bar) { bar.classList.add('hidden'); if (bar.firstElementChild) bar.firstElementChild.style.width = '0'; }
       if (nowB) {
         nowB.disabled = false;
         nowB.classList.remove('hidden');
-        nowB.textContent = canNativeInstall ? 'Update now' : 'Download';
+        nowB.textContent = 'Sync Lumo (Keep Custom)';
       }
       if (laterB) {
         laterB.disabled = false;
-        laterB.classList.toggle('hidden', !canNativeInstall);
+        laterB.classList.remove('hidden');
+        laterB.textContent = 'View Changelog';
       }
       if (text) {
-        const notes = d.releaseNotes ? `<div style="margin-top:8px;font-size:12px;opacity:0.85;max-height:120px;overflow-y:auto;white-space:pre-wrap;">${escapeHtml(d.releaseNotes)}</div>` : '';
-        if (canNativeInstall) {
-          text.innerHTML = `A new version is ready to download.${notes}`;
-        } else {
-          text.innerHTML = `Version ${escapeHtml(d.version)} is available.${notes}`;
-        }
+        const notes = d.releaseNotes ? `<div style="margin-top:8px;font-size:12px;opacity:0.85;max-height:140px;overflow-y:auto;white-space:pre-wrap;border-radius:8px;background:rgba(255,255,255,0.06);padding:8px 10px;">${escapeHtml(d.releaseNotes)}</div>` : '';
+        text.innerHTML = `<div>A new official Riff update (v${escapeHtml(d.version)}) is available with bug fixes.</div><div style="font-size:12px;opacity:0.75;margin-top:4px;">Syncing pulls official engine bugfixes while preserving all your custom Lumo features, profiles, and Oxeez branding.</div>${notes}`;
       }
       openModal(modal);
     }
@@ -18635,23 +19007,34 @@ function bindCoverHoldZoom(wrapEl) {
     }
 
     if (nowB) {
-      nowB.addEventListener('click', () => {
-        if (canNativeInstall && api && api.updateAction) {
-          api.updateAction('now');
+      nowB.addEventListener('click', async () => {
+        if (api && api.runSyncUpstream) {
           nowB.disabled = true;
           if (laterB) laterB.disabled = true;
-          if (text) text.textContent = 'Downloading...';
+          if (text) text.innerHTML = '<div style="display:flex;align-items:center;gap:8px;"><svg class="g-spinner" style="width:16px;height:16px;" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20"/></svg><span>Syncing upstream bug fixes into Lumo...</span></div>';
+          try {
+            const res = await api.runSyncUpstream();
+            if (res && res.ok) {
+              showToastNow('Lumo successfully synced with upstream Riff! All custom features preserved.', 'success');
+              if (modal) closeModal(modal);
+            } else {
+              showToastNow('Sync completed. Run sync-upstream.bat for details.', 'info');
+              if (modal) closeModal(modal);
+            }
+          } catch (e) {
+            showToastNow('To sync: run sync-upstream.bat in your Lumo folder.', 'info');
+            if (modal) closeModal(modal);
+          }
         } else {
-          window.open(fallbackReleaseUrl || 'https://github.com/rootscripts/riff/releases/latest', '_blank');
+          showToastNow('Run sync-upstream.bat in your Lumo directory to merge fixes while keeping custom features.', 'info');
           if (modal) closeModal(modal);
         }
       });
     }
     if (laterB) {
       laterB.addEventListener('click', () => {
-        if (api && api.updateAction) api.updateAction('later');
+        window.open(fallbackReleaseUrl || 'https://github.com/rootscripts/riff/releases/latest', '_blank');
         if (modal) closeModal(modal);
-        showToast('The update will be installed when you close Lumo', 'info');
       });
     }
     if (ignoreB) {

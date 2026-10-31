@@ -520,7 +520,7 @@ async function fetchDirectYoutubeStreamServer(videoId) {
   return null;
 }
 
-let serverScClientId = 'tHVbSbDP4TaoMbPppngv6Tdry83vNbMQ';
+let serverScClientId = 'OGA0P5R5U4CpyooNe9OUcnjIMxao2hB2';
 async function refreshServerScClientId() {
   try {
     const page = await fetch('https://soundcloud.com', { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(5000) }).then(r => r.text());
@@ -562,6 +562,22 @@ async function fetchDirectSoundCloudStreamServer(scUrlOrId, queryFallback) {
   const norm = normalizeSoundCloudUrl(scUrlOrId || '');
   const idMatch = String(norm).match(/(?:tracks\/|^)(\d{6,})/i);
   for (let attempt = 0; attempt < 2; attempt++) {
+      // Try resolving SoundCloud permalink URL via API
+      if (scUrlOrId && String(scUrlOrId).includes('soundcloud.com/')) {
+        try {
+          const resolveRes = await fetch(`https://api-v2.soundcloud.com/resolve?url=${encodeURIComponent(scUrlOrId)}&client_id=${cid}`, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+            signal: AbortSignal.timeout(4000)
+          });
+          if (resolveRes.status === 401 || resolveRes.status === 403) { cid = await refreshServerScClientId(); }
+          else if (resolveRes.ok) {
+            const trackObj = await resolveRes.json();
+            const u = await resolveScTranscodingServer(trackObj, cid);
+            if (u) return u;
+          }
+        } catch (_) {}
+      }
+
     try {
       if (idMatch && idMatch[1]) {
         const r = await fetch(`https://api-v2.soundcloud.com/tracks/${idMatch[1]}?client_id=${cid}`, { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(5000) });

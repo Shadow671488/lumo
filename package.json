@@ -10,6 +10,7 @@
     "brand": "node scripts/brand-electron.js",
     "postinstall": "node scripts/brand-electron.js",
     "test": "node --test",
+    "sync-upstream": "node scripts/sync-upstream.js",
     "dist": "electron-builder",
     "release": "npm version patch && git push --follow-tags",
     "release:minor": "npm version minor && git push --follow-tags",
@@ -52,6 +53,7 @@
       "src/**/*",
       "assets/**/*",
       "vendor/**/*",
+      "bin/**/*",
       "package.json",
       "!src/storage.json"
     ],

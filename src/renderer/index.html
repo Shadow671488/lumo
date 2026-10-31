@@ -1047,7 +1047,7 @@
                 </div>
                 <span class="setting-val" id="val-tvk-vis-opacity-setting" style="font-size: calc(13px * var(--font-scale, 1)); font-weight: 500; min-width: 42px; text-align: right;">85%</span>
               </div>
-              <input type="range" class="pill-range" id="slider-tvk-vis-opacity-setting" min="10" max="100" step="5" value="85" style="width: 100%; margin-top: 8px;">
+              <input type="range" class="pill-range" id="slider-tvk-vis-opacity-setting" min="10" max="100" step="5" value="85">
             </div>
 
             <div class="setting-item">
@@ -1058,7 +1058,7 @@
                 </div>
                 <span class="setting-val" id="val-viz-smooth" style="font-size: calc(13px * var(--font-scale, 1)); font-weight: 500; min-width: 42px; text-align: right;">0%</span>
               </div>
-              <input type="range" class="pill-range" id="slider-viz-smooth" min="0" max="95" step="1" value="0" style="width: 100%; margin-top: 8px;">
+              <input type="range" class="pill-range" id="slider-viz-smooth" min="0" max="95" step="1" value="0">
             </div>
 
             <div class="setting-item">
@@ -1069,7 +1069,7 @@
                 </div>
                 <span class="setting-val" id="val-viz-sens" style="font-size: calc(13px * var(--font-scale, 1)); font-weight: 500; min-width: 42px; text-align: right;">100%</span>
               </div>
-              <input type="range" class="pill-range" id="slider-viz-sens" min="0" max="300" step="5" value="100" style="width: 100%; margin-top: 8px;">
+              <input type="range" class="pill-range" id="slider-viz-sens" min="0" max="300" step="5" value="100">
             </div>
 
             <div class="setting-item">
@@ -2612,10 +2612,10 @@
               <button type="button" class="btn-outline-pill" id="btn-reset-eq-bands">Reset</button>
             </div>
             <div class="eq-faders-container">
-              <div class="eq-scale">
-                <span>+12</span>
-                <span>0</span>
-                <span>-12</span>
+              <div class="eq-scale" id="eq-scale">
+                <span class="eq-scale-val val-top">+12</span>
+                <span class="eq-scale-val val-mid">0</span>
+                <span class="eq-scale-val val-bot">-12</span>
               </div>
               <div class="eq-faders-area">
                 <div class="eq-grid-lines">
@@ -3636,7 +3636,7 @@
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19" stroke="currentColor" stroke-width="2.5"></line></svg>
           </button>
           <button class="control-btn" id="btn-tvk-repost" title="Repost track" aria-label="Repost track">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2l4 4-4 4"></path><path d="M3 11v-1a4 4 0 0 1 4-4h14"></path><path d="M7 22l-4-4 4-4"></path><path d="M21 13v1a4 4 0 0 1-4 4H3"></path></svg>
           </button>
         </div>
         <div class="tvk-progress-row" id="tvk-progress-row">

@@ -808,55 +808,34 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function searchTracksOnline(query, platform = 'youtube', limit = 20, offset = 0) {
+    const cleanQ = encodeURIComponent(String(query || '').trim());
+    if (!cleanQ) return { success: true, tracks: [] };
+
+    // 1. If connected to desktop server (e.g. adb reverse or local network), try it first with safe timeout
     const serverBase = getServerBaseUrl();
     if (serverBase) {
-      const res = await fetch(serverBase + '/api/search?q=' + encodeURIComponent(query) + '&platform=' + encodeURIComponent(platform) + '&limit=' + limit + '&offset=' + offset);
-      return await res.json();
-    }
-
-    // Mobile standalone mode without local Node server:
-    // Query public Piped / Invidious instances
-    const cleanQ = encodeURIComponent(String(query || '').trim());
-    const pipedInstances = [
-      'https://pipedapi.kavin.rocks',
-      'https://api.piped.privacy.com.de',
-      'https://pipedapi.leptons.xyz',
-      'https://pipedapi.river.link'
-    ];
-
-    for (const base of pipedInstances) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000);
-        const resp = await fetch(base + '/search?q=' + cleanQ + '&filter=music_songs', { signal: controller.signal });
+        const timeoutId = setTimeout(() => controller.abort(), 2500);
+        const res = await fetch(serverBase + '/api/search?q=' + cleanQ + '&platform=' + encodeURIComponent(platform) + '&limit=' + limit + '&offset=' + offset, { signal: controller.signal });
         clearTimeout(timeoutId);
-        if (resp.ok) {
-          const data = await resp.json();
-          const items = Array.isArray(data.items) ? data.items : [];
-          if (items.length > 0) {
-            const tracks = items.map(item => {
-              const videoId = (item.url || '').replace('/watch?v=', '');
-              return {
-                id: videoId || item.id,
-                title: item.title,
-                artist: item.uploaderName || 'Unknown Artist',
-                duration: item.duration || 180,
-                thumbnail: item.thumbnail || (videoId ? 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg' : ''),
-                url: item.url ? ('https://www.youtube.com' + item.url) : ('https://www.youtube.com/watch?v=' + videoId),
-                platform: 'youtube'
-              };
-            });
-            return { success: true, tracks };
+        if (res.ok) {
+          const data = await res.json();
+          if (data && Array.isArray(data.tracks) && data.tracks.length > 0) {
+            return data;
           }
         }
-      } catch (_) {}
+      } catch (err) {
+        console.warn('Local desktop server search unreachable, falling back to public providers:', err);
+      }
     }
 
-    const invidiousInstances = ['https://inv.nadeko.net', 'https://invidious.nerdvpn.de', 'https://inv.tux.pizza'];
+    // 2. Standalone mobile search provider A: Invidious (yt.chocolatemoo53.com) - Full YouTube audio tracks
+    const invidiousInstances = ['https://yt.chocolatemoo53.com', 'https://inv.bp.projectsegfau.lt'];
     for (const base of invidiousInstances) {
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const timeoutId = setTimeout(() => controller.abort(), 4500);
         const resp = await fetch(base + '/api/v1/search?q=' + cleanQ + '&type=video', { signal: controller.signal });
         clearTimeout(timeoutId);
         if (resp.ok) {
@@ -877,40 +856,80 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (_) {}
     }
 
-    return { success: false, tracks: [], error: 'Could not connect to search providers' };
+    // 3. Standalone mobile search provider B: iTunes API (Fast, 100% reliable, pristine cover art & preview streams)
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const itunesResp = await fetch('https://itunes.apple.com/search?term=' + cleanQ + '&entity=song&limit=' + limit, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (itunesResp.ok) {
+        const itData = await itunesResp.json();
+        const results = Array.isArray(itData.results) ? itData.results : [];
+        if (results.length > 0) {
+          const tracks = results.map(item => ({
+            id: 'itunes_' + item.trackId,
+            title: item.trackName,
+            artist: item.artistName || 'Unknown Artist',
+            album: item.collectionName || '',
+            duration: Math.round((item.trackTimeMillis || 180000) / 1000),
+            thumbnail: (item.artworkUrl100 || '').replace('100x100bb', '600x600bb'),
+            streamUrl: item.previewUrl || '',
+            previewUrl: item.previewUrl || '',
+            platform: 'itunes'
+          }));
+          return { success: true, tracks };
+        }
+      }
+    } catch (_) {}
+
+    // 4. Standalone mobile search provider C: Deezer API
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
+      const deezerResp = await fetch('https://api.deezer.com/search?q=' + cleanQ + '&limit=' + limit, { signal: controller.signal });
+      clearTimeout(timeoutId);
+      if (deezerResp.ok) {
+        const dzData = await deezerResp.json();
+        const dzList = Array.isArray(dzData.data) ? dzData.data : [];
+        if (dzList.length > 0) {
+          const tracks = dzList.map(item => ({
+            id: 'deezer_' + item.id,
+            title: item.title,
+            artist: item.artist?.name || 'Unknown Artist',
+            album: item.album?.title || '',
+            duration: item.duration || 180,
+            thumbnail: item.album?.cover_big || item.album?.cover_medium || '',
+            streamUrl: item.preview || '',
+            previewUrl: item.preview || '',
+            platform: 'deezer'
+          }));
+          return { success: true, tracks };
+        }
+      }
+    } catch (_) {}
+
+    return { success: false, tracks: [], error: 'Could not connect to online search providers' };
   }
 
   async function resolveMobileTrackStream(trackId, trackUrl, track, signal) {
+    if (track && (track.streamUrl || track.previewUrl)) {
+      return { success: true, streamUrl: track.streamUrl || track.previewUrl };
+    }
+
     let cleanId = trackId;
     if (!cleanId && trackUrl && trackUrl.includes('v=')) {
       cleanId = trackUrl.split('v=')[1].split('&')[0];
     }
     if (!cleanId && track && track.id) cleanId = track.id;
-
-    if (!cleanId) return { success: false, error: 'No video id found' };
-
-    const pipedInstances = [
-      'https://pipedapi.kavin.rocks',
-      'https://api.piped.privacy.com.de',
-      'https://pipedapi.leptons.xyz',
-      'https://pipedapi.river.link'
-    ];
-
-    for (const base of pipedInstances) {
-      try {
-        const resp = await fetch(base + '/streams/' + encodeURIComponent(cleanId), { signal });
-        if (resp.ok) {
-          const sData = await resp.json();
-          const audioStreams = sData.audioStreams || [];
-          if (audioStreams.length > 0) {
-            audioStreams.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
-            return { success: true, streamUrl: audioStreams[0].url };
-          }
-        }
-      } catch (_) {}
+    if (cleanId && String(cleanId).startsWith('itunes_') || String(cleanId).startsWith('deezer_')) {
+      if (track?.streamUrl || track?.previewUrl) {
+        return { success: true, streamUrl: track.streamUrl || track.previewUrl };
+      }
     }
+    if (!cleanId) return { success: false, error: 'No stream identifier found' };
 
-    const invidiousInstances = ['https://inv.nadeko.net', 'https://invidious.nerdvpn.de', 'https://inv.tux.pizza'];
+    // Primary: Invidious adaptive formats audio
+    const invidiousInstances = ['https://yt.chocolatemoo53.com', 'https://inv.bp.projectsegfau.lt'];
     for (const base of invidiousInstances) {
       try {
         const resp = await fetch(base + '/api/v1/videos/' + encodeURIComponent(cleanId), { signal });
@@ -925,8 +944,30 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (_) {}
     }
 
+    // Fallback: Piped audio streams
+    const pipedInstances = [
+      'https://pipedapi.kavin.rocks',
+      'https://api.piped.privacy.com.de',
+      'https://pipedapi.leptons.xyz',
+      'https://pipedapi.river.link'
+    ];
+    for (const base of pipedInstances) {
+      try {
+        const resp = await fetch(base + '/streams/' + encodeURIComponent(cleanId), { signal });
+        if (resp.ok) {
+          const sData = await resp.json();
+          const audioStreams = sData.audioStreams || [];
+          if (audioStreams.length > 0) {
+            audioStreams.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+            return { success: true, streamUrl: audioStreams[0].url };
+          }
+        }
+      } catch (_) {}
+    }
+
     return { success: false, error: 'Could not resolve audio stream on mobile' };
   }
+
 
   if (window.electronAPI && window.electronAPI.getServerPort) {
     try {
@@ -7670,7 +7711,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (extMuted !== state.isMuted || (!extMuted && Math.abs(extVol - state.volume) > 0.015)) {
         state.isMuted = extMuted;
         if (!extMuted) state.volume = extVol;
-        if (el.volumeSlider) el.volumeSlider.value = String(state.volume);
+        if (el.volumeSlider && !isUserInteractingVolume) el.volumeSlider.value = String(state.volume);
         if (el.volumeIcon) el.volumeIcon.classList.toggle('hidden', state.isMuted);
         if (el.volumeMutedIcon) el.volumeMutedIcon.classList.toggle('hidden', !state.isMuted);
         persistVolumeState();
@@ -8028,6 +8069,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  let isUserInteractingVolume = false;
   let isDraggingScrubber = false;
   let isHoveringScrubber = false;
   let activeScrubberPointerId = null;
@@ -15325,6 +15367,15 @@ function bindCoverHoldZoom(wrapEl) {
       el.volumeSlider.value = String(state.volume);
       el.volumeSlider.dispatchEvent(new Event('input'));
     }, { passive: false });
+    ['pointerdown', 'mousedown', 'touchstart'].forEach(evt => {
+      el.volumeSlider.addEventListener(evt, () => { isUserInteractingVolume = true; });
+    });
+    ['pointerup', 'mouseup', 'touchend', 'change'].forEach(evt => {
+      el.volumeSlider.addEventListener(evt, () => { isUserInteractingVolume = false; });
+    });
+    window.addEventListener('pointerup', () => { isUserInteractingVolume = false; });
+    window.addEventListener('mouseup', () => { isUserInteractingVolume = false; });
+    window.addEventListener('touchend', () => { isUserInteractingVolume = false; });
     el.volumeSlider.addEventListener('input', (e) => {
       state.volume = parseFloat(e.target.value);
       state.isMuted = false;

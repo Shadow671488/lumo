@@ -22,7 +22,6 @@ function linuxIconPath() {
 
 function getLauncherInfo() {
   if (process.platform === 'win32') {
-    if (!app.isPackaged) return { platform: 'win32', canInstall: false, installed: false, reason: 'Available in the installed app' };
     return { platform: 'win32', canInstall: true, installed: fs.existsSync(winShortcutPath()), reason: '' };
   }
   if (process.platform === 'linux') {
@@ -32,27 +31,11 @@ function getLauncherInfo() {
   return { platform: process.platform, canInstall: false, installed: false, reason: 'Not supported on this system' };
 }
 
-function installWindows() {
-  const lnk = winShortcutPath();
-  if (fs.existsSync(lnk)) return { ok: true };
-  const target = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
-  fs.mkdirSync(path.dirname(lnk), { recursive: true });
-  const options = { target, cwd: path.dirname(target), description: COMMENT, icon: target, iconIndex: 0 };
-  if (APP_ID) options.appUserModelId = APP_ID;
-  return { ok: shell.writeShortcutLink(lnk, 'create', options) };
-}
-
 function quoteExec(file) {
   return '"' + file.replace(/(["`$\\])/g, '\\$1').replace(/%/g, '%%') + '"';
 }
 
-function installLinux() {
-  const image = process.env.APPIMAGE;
-  if (!image) return { ok: false };
-  try { fs.chmodSync(image, 0o755); } catch (e) {}
-  const desktop = linuxDesktopPath();
-  const iconDest = linuxIconPath();
-  let icon = 'audio-x-generic';
+function installWindows() {
   try {
     fs.mkdirSync(path.dirname(iconDest), { recursive: true });
     fs.writeFileSync(iconDest, fs.readFileSync(path.join(__dirname, '../../assets', '01-default.png')));
@@ -82,12 +65,17 @@ function installLinux() {
 }
 
 function installLauncher() {
+  let result;
   try {
-    if (!getLauncherInfo().canInstall) return { ok: false };
-    if (process.platform === 'win32') return installWindows();
-    if (process.platform === 'linux') return installLinux();
-  } catch (e) {}
-  return { ok: false };
+    const info = getLauncherInfo();
+    if (!info.canInstall) return { ok: false, success: false, error: info.reason || 'Cannot install launcher on this system' };
+    if (process.platform === 'win32') result = installWindows();
+    else if (process.platform === 'linux') result = installLinux();
+    else return { ok: false, success: false, error: 'Unsupported platform: ' + process.platform };
+  } catch (e) {
+    result = { ok: false, error: e.message || String(e) };
+  }
+  return { ok: !!result.ok, success: !!result.ok, error: result.error || '', path: result.path || '' };
 }
 
 module.exports = { getLauncherInfo, installLauncher };

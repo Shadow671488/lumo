@@ -58,7 +58,7 @@ Built with **Electron**, **Vanilla JavaScript**, and **WebGL**, Lumo provides re
 - High quality streaming with **YouTube Music, YouTube, and SoundCloud** without third-party advertisements or account requirements
 - **Offline lossless playback with full local library support** for high resolution formats including FLAC, WAV, MP3, OGG, and M4A.
 - **Easy built-in audio editor**, downloading with effects or trimming 10-band & 3-band equalizer, and real-time DSP effects (speed, pitch, reverb, distortion).
-- **1-Click multi-platform playlist migration**: Direct import and resolution of public playlists from Spotify, Apple Music, YouTube Music, and SoundCloud
+- **1-Click multi-platform playlist migration**: Direct import and resolution of public playlists from Spotify, Apple Music, Deezer, YouTube Music, and SoundCloud
 - **Material Design 3 UI**: Dynamic color extraction from album artwork, deep UI theming, responsive layout presets, and an integrated CSS editor
 - **Hardware-Accelerated Visuals**: Canvas and WebGL visualizers including real-time frequency analyzers, an interactive squiggly progress scrubber, and synchronized karaoke lyrics.
 - **Discord Rich Presence**: Real-time playback status reporting track metadata, artist info, and elapsed time to Discord.
@@ -105,7 +105,7 @@ Lumo implements the Material Design 3 (M3 Expressive) specification:
 Migrate existing music libraries between platforms in a single operation:
 
 - Import public playlist URLs from **Spotify** (including playlists with 100+ tracks via automated pagination).
-- Import public playlists and albums from **Apple Music**, **SoundCloud**, and **YouTube / YouTube Music**.
+- Import public playlists from **Deezer**, and public playlists and albums from **Apple Music**, **SoundCloud**, and **YouTube / YouTube Music**.
 - Platform-aware search resolution: matches imported track metadata against the selected audio provider to construct immediate local playlists.
 
 ## Synchronized Lyrics Engine
@@ -120,6 +120,8 @@ Migrate existing music libraries between platforms in a single operation:
 Pre-built binaries are available on the [Releases page](https://github.com/rootscripts/riff/releases).
 
 Standard releases include all necessary dependencies (bundled yt-dlp and ffmpeg binaries). No secondary runtime configuration is required on Windows or Linux.
+
+On Windows, the installer lets you choose the installation directory. Uninstalling Riff does not delete your app data.
 
 ### macOS
 

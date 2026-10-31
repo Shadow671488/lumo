@@ -104,6 +104,17 @@ function resolveDownloadDir() {
   return null;
 }
 
+function defaultDownloadDir() {
+  if (IS_WIN) {
+    const drive = 'D:\\';
+    try {
+      fs.accessSync(drive, fs.constants.W_OK);
+      return path.join(drive, 'Downloads');
+    } catch (e) {}
+  }
+  try { return require('electron').app.getPath('downloads'); } catch (e) { return path.join(os.homedir(), 'Downloads'); }
+}
+
 function setDownloadDir(dir) {
   const cfg = readConfig();
   if (dir && String(dir).trim()) cfg.downloadDir = path.resolve(String(dir).trim());
@@ -138,7 +149,7 @@ function writeStartupConfig(patch) {
 function tutorialDone() { return fs.existsSync(TUTORIAL_MARKER) || fs.existsSync(TUTORIAL_MARKER_FALLBACK) || LEGACY_TUTORIAL_MARKERS.some(file => fs.existsSync(file)); }
 function markTutorialDone() {
   for (const file of [TUTORIAL_MARKER, TUTORIAL_MARKER_FALLBACK]) {
-    try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, '1'); return true; } catch (e) {}
+    try { fs.mkdirSync(path.dirname(file), { recursive: true }); fs.writeFileSync(file, APP_VERSION); return true; } catch (e) {}
   }
   return false;
 }

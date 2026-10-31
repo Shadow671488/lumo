@@ -57,14 +57,25 @@ html = html.replace(/<aside class="right-panel[^"]*"/i, '<aside class="right-pan
 html = html.replace(/<html lang="en"[^>]*>/i, '<html lang="en" class="is-mobile hide-titlebar">');
 
 // Add mobile viewport, safe-area meta, and bulletproof electronAPI shim
-const mobileHeaderShim = `<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+const mobileHeaderShim = `  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <script>
     window.isCapacitorApp = true;
     window.isMobile = true;
     document.documentElement.classList.add('is-mobile', 'hide-titlebar');
+    try {
+      const _origFetch = window.fetch;
+      window.fetch = function(url, opts) {
+        if (typeof url === 'string' && (url.includes('127.0.0.1') || url.includes('localhost'))) {
+          return Promise.resolve(new Response(JSON.stringify({ success: false, error: 'Standalone mobile mode' }), {
+            status: 503,
+            headers: { 'Content-Type': 'application/json' }
+          }));
+        }
+        return _origFetch.apply(this, arguments);
+      };
+    } catch (_) {}
     if (!window.electronAPI) {
       window.electronAPI = new Proxy({}, {
         get: (target, prop) => {
@@ -85,8 +96,8 @@ const mobileHeaderShim = `<head>
     }
   </script>`;
 
-if (!html.includes('viewport-fit=cover')) {
-  html = html.replace(/<head>/i, mobileHeaderShim);
+if (!html.includes('window.isCapacitorApp = true;')) {
+  html = html.replace(/<head>/i, '<head>\n' + mobileHeaderShim);
 }
 
 // Add is-mobile and hide-titlebar classes to body properly without duplicate class attribute

@@ -7,8 +7,8 @@ android {
         applicationId "com.lumo.player"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 44016
-        versionName "44.0.16"
+        versionCode 44018
+        versionName "44.0.18"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

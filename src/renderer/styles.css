@@ -11612,13 +11612,35 @@ body.perf .ota-btn-ignore {
    Placed at the bottom of styles.css to ensure highest cascade priority.
    ========================================================================== */
 
+html.is-mobile {
+  height: 100% !important;
+  height: 100dvh !important;
+  overflow: hidden !important;
+  width: 100% !important;
+  max-width: 100vw !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+}
+
 body.is-mobile {
+  height: 100% !important;
+  height: 100dvh !important;
   overflow: hidden !important;
   touch-action: manipulation !important;
   -webkit-touch-callout: none !important;
   -webkit-tap-highlight-color: transparent !important;
   user-select: none !important;
   -webkit-user-select: none !important;
+  zoom: 1 !important;
+  transform: none !important;
+  width: 100% !important;
+  max-width: 100vw !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  flex-direction: column !important;
 }
 
 /* 1. Hide all window chrome and desktop overlays on mobile */
@@ -11626,26 +11648,41 @@ body.is-mobile .titlebar,
 body.is-mobile #titlebar,
 body.is-mobile .titlebar-controls,
 body.is-mobile .titlebar-drag,
-body.is-mobile .panel-resize-edge {
+body.is-mobile .panel-resize-edge,
+body.is-mobile .bg-mesh-layer,
+body.is-mobile #bg-mesh-a,
+body.is-mobile #bg-mesh-b,
+body.is-mobile .home-ambient,
+body.is-mobile .home-ambient-layer,
+body.is-mobile .hero-fx,
+body.is-mobile .my-wave-ambient-light,
+body.is-mobile #ambient-glow-backdrop,
+body.is-mobile #backdrop-blur-layer,
+body.is-mobile #particles-bg-canvas,
+body.is-mobile #crt-overlay,
+body.is-mobile #grain-overlay {
   display: none !important;
   height: 0 !important;
   width: 0 !important;
   pointer-events: none !important;
+  animation: none !important;
+  filter: none !important;
 }
 
 /* 2. Fullscreen application layout */
 body.is-mobile .app-layout {
   display: flex !important;
   flex-direction: column !important;
-  width: 100vw !important;
-  height: 100vh !important;
-  height: 100dvh !important;
-  max-height: 100dvh !important;
+  width: 100% !important;
+  max-width: 100vw !important;
+  height: auto !important;
+  flex: 1 1 0% !important;
   min-height: 0 !important;
   padding: 0 !important;
   margin: 0 !important;
   overflow: hidden !important;
   position: relative !important;
+  box-sizing: border-box !important;
 }
 
 /* 3. Mobile Header / Top Bar */
@@ -11654,12 +11691,14 @@ body.is-mobile .top-nav {
   align-items: center !important;
   height: auto !important;
   min-height: 52px !important;
-  padding: calc(env(safe-area-inset-top, 0px) + 6px) 12px 6px 12px !important;
-  gap: 10px !important;
+  padding: calc(env(safe-area-inset-top, 0px) + 6px) 16px 6px 16px !important;
+  gap: 12px !important;
   background: transparent !important;
   z-index: 1000 !important;
   flex-shrink: 0 !important;
   box-sizing: border-box !important;
+  width: 100% !important;
+  max-width: 100vw !important;
 }
 
 body.is-mobile .mobile-app-logo {
@@ -11714,15 +11753,16 @@ body.is-mobile .profile-nav-name {
 
 /* 4. Scrollable main content */
 body.is-mobile .main-content {
-  flex: 1 1 auto !important;
+  flex: 1 1 0% !important;
   width: 100% !important;
+  max-width: 100vw !important;
   height: 100% !important;
   min-height: 0 !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   -webkit-overflow-scrolling: touch !important;
   overscroll-behavior-y: contain !important;
-  padding: 6px 12px calc(56px + 60px + env(safe-area-inset-bottom, 0px) + 20px) 12px !important;
+  padding: 6px 16px calc(58px + 64px + env(safe-area-inset-bottom, 0px) + 24px) 16px !important;
   margin: 0 !important;
   border-radius: 0 !important;
   box-sizing: border-box !important;
@@ -12004,10 +12044,214 @@ body.is-mobile .track-row-actions button {
 
 body.is-mobile .featured-mixes-grid,
 body.is-mobile .quick-picks-grid,
-body.is-mobile .sp-quick,
 body.is-mobile .skeleton-grid {
   grid-template-columns: 1fr !important;
   gap: 10px !important;
+}
+
+body.is-mobile #view-discover,
+body.is-mobile .discover-content {
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  box-sizing: border-box !important;
+}
+
+body.is-mobile .sp-home {
+  padding: 4px 0 24px 0 !important;
+  gap: 22px !important;
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+body.is-mobile .sp-section {
+  width: 100% !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+body.is-mobile .sp-section h2 {
+  font-size: 19px !important;
+  font-weight: 700 !important;
+  margin: 0 0 10px 0 !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+}
+
+body.is-mobile .sp-quick {
+  display: grid !important;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  gap: 8px !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+body.is-mobile .sp-quick > .sp-tile:only-child {
+  grid-column: 1 / -1 !important;
+}
+
+body.is-mobile .sp-tile {
+  height: 54px !important;
+  border-radius: 12px !important;
+  gap: 10px !important;
+  padding: 0 8px 0 0 !important;
+  box-sizing: border-box !important;
+  min-width: 0 !important;
+  width: 100% !important;
+  overflow: hidden !important;
+}
+
+body.is-mobile .sp-tile img,
+body.is-mobile .sp-tile .sp-heart,
+body.is-mobile .sp-tile .playlist-cover-art {
+  width: 54px !important;
+  height: 54px !important;
+  flex: 0 0 54px !important;
+  object-fit: cover !important;
+}
+
+body.is-mobile .sp-tile-text {
+  min-width: 0 !important;
+  flex: 1 1 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  gap: 2px !important;
+}
+
+body.is-mobile .sp-tile-title {
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+body.is-mobile .sp-tile-sub {
+  font-size: 11px !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+body.is-mobile .sp-row {
+  display: grid !important;
+  grid-auto-flow: column !important;
+  grid-auto-columns: 145px !important;
+  gap: 12px !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  touch-action: pan-x !important;
+  scroll-behavior: smooth !important;
+  scrollbar-width: none !important;
+  overscroll-behavior-x: contain !important;
+  padding: 2px 0 10px 0 !important;
+  width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+body.is-mobile .sp-row::-webkit-scrollbar {
+  display: none !important;
+}
+
+body.is-mobile .sp-card {
+  width: 145px !important;
+  min-width: 145px !important;
+  max-width: 145px !important;
+  box-sizing: border-box !important;
+}
+
+body.is-mobile .sp-card-cover {
+  width: 100% !important;
+  aspect-ratio: 1 !important;
+  border-radius: 14px !important;
+  overflow: hidden !important;
+  background: var(--md-sys-color-surface-container-high) !important;
+}
+
+body.is-mobile .sp-card-cover img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+body.is-mobile .sp-card-title {
+  font-size: 13px !important;
+  margin-top: 6px !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+body.is-mobile .sp-card-sub {
+  font-size: 12px !important;
+  margin-top: 1px !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+body.is-mobile .fav-artists-row {
+  grid-auto-columns: 96px !important;
+  gap: 14px !important;
+}
+
+body.is-mobile .fav-artist-card {
+  width: 96px !important;
+  min-width: 96px !important;
+  max-width: 96px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: center !important;
+  box-sizing: border-box !important;
+}
+
+body.is-mobile .fav-artist-circle {
+  width: 86px !important;
+  height: 86px !important;
+  border-radius: 50% !important;
+  overflow: hidden !important;
+  position: relative !important;
+  margin: 0 auto !important;
+}
+
+body.is-mobile .fav-artist-img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+  border-radius: 50% !important;
+}
+
+body.is-mobile .fav-artist-plays {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 4px !important;
+  font-size: 11px !important;
+  margin-top: 4px !important;
+  color: var(--md-sys-color-on-surface-variant) !important;
+  white-space: nowrap !important;
+}
+
+body.is-mobile .fav-artist-hover {
+  display: none !important;
+}
+
+body.is-mobile .fav-artist-name {
+  font-size: 12px !important;
+  font-weight: 600 !important;
+  margin-top: 4px !important;
+  text-align: center !important;
+  max-width: 90px !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
 }
 
 /* 8. SETTINGS ON MOBILE */
@@ -12099,54 +12343,4 @@ body.is-mobile .settings-nav-btn {
   touch-action: none !important;
   user-select: none !important;
   -webkit-user-select: none !important;
-}
-
-
-:is(html.is-mobile, body.is-mobile) .right-panel.hidden,
-:is(html.is-mobile, body.is-mobile) .right-panel:not(.mobile-open) {
-  display: none !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-  transform: translateY(100%) !important;
-}
-
-:is(html.is-mobile, body.is-mobile) .right-panel.mobile-open:not(.hidden) {
-  display: flex !important;
-  visibility: visible !important;
-  pointer-events: auto !important;
-  position: fixed !important;
-  inset: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
-  height: 100dvh !important;
-  z-index: 4000 !important;
-  background: var(--md-sys-color-surface, #141318) !important;
-  padding: calc(env(safe-area-inset-top, 0px) + 16px) 18px calc(env(safe-area-inset-bottom, 0px) + 20px) 18px !important;
-  box-sizing: border-box !important;
-  flex-direction: column !important;
-  animation: mobileSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) !important;
-}
-
-@keyframes mobileSlideUp {
-  from { transform: translateY(100%); opacity: 0; }
-  to { transform: translateY(0); opacity: 1; }
-}
-
-:is(html.is-mobile, body.is-mobile) #btn-close-right-panel {
-  width: 38px !important;
-  height: 38px !important;
-  min-width: 38px !important;
-  min-height: 38px !important;
-  border-radius: 50% !important;
-  background: var(--md-sys-color-surface-container-high, rgba(255, 255, 255, 0.12)) !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  opacity: 1 !important;
-  cursor: pointer !important;
-}
-
-:is(html.is-mobile, body.is-mobile) #btn-close-right-panel svg {
-  width: 18px !important;
-  height: 18px !important;
 }

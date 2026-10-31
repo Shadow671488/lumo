@@ -495,7 +495,34 @@ document.addEventListener('DOMContentLoaded', async () => {
   const savedScale = parseFloat(localStorage.getItem('lumo_ui_scale') || '100');
   applyScale(savedScale);
 
+  if (isMobileEnvironment()) {
+    document.addEventListener('backbutton', (e) => {
+      if (el.rightPanel && el.rightPanel.classList.contains('mobile-open')) {
+        el.rightPanel.classList.remove('mobile-open');
+        el.rightPanel.classList.add('hidden');
+        return;
+      }
+      const openModal = document.querySelector('.m3-dialog-backdrop:not(.hidden), .modal:not(.hidden), .m3-modal:not(.hidden)');
+      if (openModal) {
+        const closeBtn = openModal.querySelector('[id*="close"], .btn-close, .modal-close');
+        if (closeBtn) closeBtn.click();
+        else openModal.classList.add('hidden');
+        return;
+      }
+      if (state.currentView && state.currentView !== 'discover') {
+        switchView('discover');
+        return;
+      }
+    });
+  }
+
+
   function applyScale(scalePercent) {
+    if (isMobileEnvironment()) {
+      document.documentElement.style.setProperty('--app-scale', '1');
+      if (document.body) document.body.style.zoom = '1';
+      return;
+    }
     const factor = (scalePercent / 100) * 0.90;
     document.documentElement.style.setProperty('--app-scale', factor.toString());
     if (window.electronAPI && window.electronAPI.setZoomFactor) {
@@ -796,6 +823,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   
   function isMobileEnvironment() {
     return !!(window.isMobile || window.isCapacitorApp || (window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) || (document.body && document.body.classList.contains('is-mobile')) || (document.documentElement && document.documentElement.classList.contains('is-mobile')) || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
+  }
+
+  if (isMobileEnvironment()) {
+    state.serverPort = null;
   }
 
   function getServerBaseUrl() {
@@ -10275,36 +10306,53 @@ function renderClickableArtists(container, rawArtist) {
   function fetchFavArtistMeta(artistObj, card) {
     if (!artistObj || !artistObj.name) return Promise.resolve();
     const lower = (artistObj.name || '').toLowerCase();
-    return fetch(`http://127.0.0.1:${state.serverPort}/api/artist?name=${encodeURIComponent(artistObj.name)}`)
+    const serverBase = typeof getServerBaseUrl === 'function' ? getServerBaseUrl() : null;
+    const fetchUrl = serverBase
+      ? `${serverBase}/api/artist?name=${encodeURIComponent(artistObj.name)}`
+      : `https://api.deezer.com/search/artist?q=${encodeURIComponent(artistObj.name)}&limit=5`;
+    return fetch(fetchUrl)
       .then(r => r.json())
       .then(data => {
+        let newAvatar = '';
+        let newFans = 0;
         if (data && data.success && data.artist) {
-          const newAvatar = data.artist.avatar || data.artist.banner || '';
-          const newFans = data.artist.fans || data.artist.nb_fan || 0;
-          if (newAvatar) {
-            if (card) {
-              const img = card.querySelector('.fav-artist-img');
-              if (img) img.src = newAvatar;
-            }
-            artistObj.avatar = newAvatar;
-          }
-          if (newFans) {
-            artistObj.fans = newFans;
-            if (!artistObj.plays || artistObj.plays <= 0) {
-              if (card) {
-                const badgeSpan = card.querySelector('.fav-artist-plays span');
-                if (badgeSpan) badgeSpan.textContent = `${formatCount(newFans)} fans`;
+          newAvatar = data.artist.avatar || data.artist.banner || '';
+          newFans = data.artist.fans || data.artist.nb_fan || 0;
+        } else if (data && Array.isArray(data.data) && data.data.length > 0) {
+          let best = data.data[0];
+          for (const item of data.data) {
+            if ((item.nb_fan || 0) > (best.nb_fan || 0)) {
+              if (!item.name || item.name.toLowerCase() === lower) {
+                best = item;
               }
             }
           }
-          const cache = safeJson('lumo_artist_meta_cache', {});
-          cache[lower] = {
-            avatar: artistObj.avatar || '',
-            fans: artistObj.fans || 0,
-            plays: artistObj.plays || 0
-          };
-          localStorage.setItem('lumo_artist_meta_cache', JSON.stringify(cache));
+          newAvatar = best.picture_medium || best.picture_big || best.picture || '';
+          newFans = best.nb_fan || 0;
         }
+        if (newAvatar) {
+          if (card) {
+            const img = card.querySelector('.fav-artist-img');
+            if (img) img.src = newAvatar;
+          }
+          artistObj.avatar = newAvatar;
+        }
+        if (newFans) {
+          artistObj.fans = newFans;
+          if (!artistObj.plays || artistObj.plays <= 0) {
+            if (card) {
+              const badgeSpan = card.querySelector('.fav-artist-plays span');
+              if (badgeSpan) badgeSpan.textContent = `${formatCount(newFans)} fans`;
+            }
+          }
+        }
+        const cache = safeJson('lumo_artist_meta_cache', {});
+        cache[lower] = {
+          avatar: artistObj.avatar || '',
+          fans: artistObj.fans || 0,
+          plays: artistObj.plays || 0
+        };
+        localStorage.setItem('lumo_artist_meta_cache', JSON.stringify(cache));
       })
       .catch(() => {});
   }
@@ -10333,9 +10381,10 @@ function renderClickableArtists(container, rawArtist) {
       ? `${formatCount(plays)} play${plays === 1 ? '' : 's'}`
       : (fans > 0 ? `${formatCount(fans)} fans` : '0 plays');
 
+    const svgFallback = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="152" height="152" fill="#333"><circle cx="76" cy="76" r="76" fill="#2a2a2a"/></svg>');
     const circleHtml = `
       <div class="fav-artist-circle">
-        <img class="fav-artist-img" src="${escapeHtml(avatar)}" alt="${escapeHtml(artistObj.name)}" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'152\\' height=\\'152\\' fill=\\'%23333\\'><circle cx=\\'76\\' cy=\\'76\\' r=\\'76\\' fill=\\'%232a2a2a\\'/></svg>'">
+        <img class="fav-artist-img" src="${escapeHtml(avatar)}" alt="${escapeHtml(artistObj.name)}" onerror="this.onerror=null;this.src='${svgFallback}'">
         <div class="fav-artist-plays"><svg viewBox="0 0 24 24"><polygon points="6 4 20 12 6 20 6 4"/></svg><span>${escapeHtml(playText)}</span></div>
         <div class="fav-artist-hover">
           <button type="button" class="fav-artist-action-btn primary btn-play-fav" title="Play ${escapeHtml(artistObj.name)}">
@@ -11163,11 +11212,27 @@ function renderClickableArtists(container, rawArtist) {
   }
 
   function proxiedThumb(src, track) {
-    if (!src || !state.serverPort) return src;
+    if (!src) return '';
+    if (typeof src === 'string' && src.includes('/api/image-proxy') && src.includes('url=')) {
+      try {
+        const u = new URL(src, 'http://localhost');
+        const real = u.searchParams.get('url');
+        if (real) src = real;
+      } catch (_) {
+        const m = src.match(/[?&]url=([^&]+)/);
+        if (m) src = decodeURIComponent(m[1]);
+      }
+    }
+    if (isMobileEnvironment()) {
+      if (src.startsWith('http://127.0.0.1') || src.startsWith('http://localhost')) return '';
+      return src;
+    }
+    const serverBase = typeof getServerBaseUrl === 'function' ? getServerBaseUrl() : null;
+    if (!serverBase) return src;
     if (!/^https?:\/\//i.test(src)) return src;
     if (src.indexOf('/api/image-proxy') !== -1) return src;
     if (src.indexOf('127.0.0.1') !== -1 || src.indexOf('localhost') !== -1) return src;
-    let out = `http://127.0.0.1:${state.serverPort}/api/image-proxy?url=${encodeURIComponent(src)}`;
+    let out = `${serverBase}/api/image-proxy?url=${encodeURIComponent(src)}`;
     if (track && track.artist && track.title) {
       out += `&artist=${encodeURIComponent(track.artist)}&title=${encodeURIComponent(track.title)}`;
     }
@@ -11184,12 +11249,21 @@ function renderClickableArtists(container, rawArtist) {
     if (/(?:i\.ytimg\.com|img\.youtube\.com)\/(?:vi|vi_webp)\/([^/?#]+)\/(?:hqdefault|mqdefault|default|sddefault)\.(jpg|webp)/i.test(res)) {
       res = res.replace(/(https?:\/\/(?:i\.ytimg\.com|img\.youtube\.com))\/(?:vi|vi_webp)\/([^/?#]+)\/(?:hqdefault|mqdefault|default|sddefault)\.(jpg|webp)/i, '$1/vi/$2/hqdefault.jpg');
     }
-    res = res
-      .replace(new RegExp('\\/(\\d{2,4})x(\\d{2,4})(bb|cc|sr)?\\.(jpg|png|webp)', 'i'), '/1200x1200bb.$4')
-      .replace(new RegExp('\\/100x100(bb)?\\.(jpg|png|webp)', 'i'), '/1200x1200bb.$2')
-      .replace(new RegExp('\\/picture\\/([^/]+)\\/\\d+x\\d+-', 'i'), '/picture/$1/1000x1000-')
-      .replace(new RegExp('=(?:w\\d+-h\\d+|s\\d+)[^&?]*', 'i'), '=w1200-h1200-l90-rj')
-      .replace(new RegExp('-(?:large|small|badge|crop|t\\d+x\\d+)\\.(jpg|png)', 'i'), '-t500x500.$1');
+    if (isMobileEnvironment()) {
+      res = res
+        .replace(new RegExp('\\/(\\d{2,4})x(\\d{2,4})(bb|cc|sr)?\\.(jpg|png|webp)', 'i'), '/600x600bb.$4')
+        .replace(new RegExp('\\/100x100(bb)?\\.(jpg|png|webp)', 'i'), '/600x600bb.$2')
+        .replace(new RegExp('\\/picture\\/([^/]+)\\/\\d+x\\d+-', 'i'), '/picture/$1/500x500-')
+        .replace(new RegExp('=(?:w\\d+-h\\d+|s\\d+)[^&?]*', 'i'), '=w600-h600-l90-rj')
+        .replace(new RegExp('-(?:large|small|badge|crop|t\\d+x\\d+)\\.(jpg|png)', 'i'), '-t500x500.$1');
+    } else {
+      res = res
+        .replace(new RegExp('\\/(\\d{2,4})x(\\d{2,4})(bb|cc|sr)?\\.(jpg|png|webp)', 'i'), '/1200x1200bb.$4')
+        .replace(new RegExp('\\/100x100(bb)?\\.(jpg|png|webp)', 'i'), '/1200x1200bb.$2')
+        .replace(new RegExp('\\/picture\\/([^/]+)\\/\\d+x\\d+-', 'i'), '/picture/$1/1000x1000-')
+        .replace(new RegExp('=(?:w\\d+-h\\d+|s\\d+)[^&?]*', 'i'), '=w1200-h1200-l90-rj')
+        .replace(new RegExp('-(?:large|small|badge|crop|t\\d+x\\d+)\\.(jpg|png)', 'i'), '-t500x500.$1');
+    }
     return res;
   }
 
@@ -24042,7 +24116,7 @@ function bindCoverHoldZoom(wrapEl) {
     const thumbUrl = (typeof getTrackThumbUrl === 'function' ? getTrackThumbUrl(track) : '') || track.thumbnail || track.cover || track.image || '';
     card.innerHTML = `
       <div class="my-wave-track-cover-wrap">
-        <img class="my-wave-track-cover" src="${escapeHtml(thumbUrl)}" alt="" onerror="this.src='data:image/svg+xml;utf8,<svg xmlns=\\'http://www.w3.org/2000/svg\\' width=\\'280\\' height=\\'280\\' fill=\\'%23555\\'><rect width=\\'100%\\' height=\\'100%\\'/></svg>'">
+        <img class="my-wave-track-cover" src="${escapeHtml(thumbUrl)}" alt="" onerror="this.src='data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%27http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%27%20width%3D%27280%27%20height%3D%27280%27%20fill%3D%27%23555%27%3E%3Crect%20width%3D%27100%25%27%20height%3D%27100%25%27%2F%3E%3C%2Fsvg%3E'">
         <div class="my-wave-track-play-overlay">
           <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
         </div>
@@ -24643,6 +24717,19 @@ function bindCoverHoldZoom(wrapEl) {
       if (recentTracks.length >= 5) break;
     }
 
+    if (recentTracks.length < 5) {
+      const trCache = safeJson('lumo_trending_cache', null);
+      const fallbackList = (trCache && Array.isArray(trCache.tracks) && trCache.tracks.length > 0) ? trCache.tracks : getStarterCuratedTracks();
+      for (const t of fallbackList) {
+        if (!t) continue;
+        const canId = (typeof getTrackCanonicalId === 'function' ? getTrackCanonicalId(t) : '') || t.id || `${t.artist || ''}::${t.title || ''}`;
+        if (!canId || seenTracks.has(canId)) continue;
+        seenTracks.add(canId);
+        recentTracks.push(t);
+        if (recentTracks.length >= 5) break;
+      }
+    }
+
     recentTracks.forEach((track, idx) => {
       const tile = document.createElement('div');
       tile.className = 'sp-tile';
@@ -24652,6 +24739,10 @@ function bindCoverHoldZoom(wrapEl) {
       img.decoding = 'async';
       img.src = thumb;
       img.alt = '';
+      img.onerror = () => {
+        img.onerror = null;
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2"><rect width="24" height="24" fill="#2a2a2e"/><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>');
+      };
       const text = document.createElement('div');
       text.className = 'sp-tile-text';
       const title = document.createElement('div');
@@ -24737,7 +24828,7 @@ function bindCoverHoldZoom(wrapEl) {
     return covers;
   }
 
-  function spCard({ cover, gridCovers, title, sub, onClick, isExplicit = false }) {
+  function spCard({ cover, gridCovers, title, sub, onClick, isExplicit = false, isArtist = false }) {
     const card = document.createElement('div');
     card.className = 'sp-card';
 
@@ -24752,6 +24843,10 @@ function bindCoverHoldZoom(wrapEl) {
         gImg.decoding = 'async';
         gImg.src = c || '';
         gImg.alt = '';
+        gImg.onerror = () => {
+          gImg.onerror = null;
+          gImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="1.8"><rect width="24" height="24" fill="#242428"/><circle cx="12" cy="12" r="5" stroke="#555"/></svg>');
+        };
         grid.appendChild(gImg);
       });
       coverWrap.appendChild(grid);
@@ -24761,6 +24856,10 @@ function bindCoverHoldZoom(wrapEl) {
       img.decoding = 'async';
       img.src = cover || '';
       img.alt = '';
+      img.onerror = () => {
+        img.onerror = null;
+        img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="1.8"><rect width="24" height="24" fill="#242428"/><path d="M9 18V5l12-2v13" stroke="#666"></path><circle cx="6" cy="18" r="3" stroke="#666"></circle><circle cx="18" cy="16" r="3" stroke="#666"></circle></svg>');
+      };
       coverWrap.appendChild(img);
     }
 
@@ -24780,7 +24879,7 @@ function bindCoverHoldZoom(wrapEl) {
     const subSpan = document.createElement('span');
     subSpan.className = 'sp-card-artist-link';
     subSpan.textContent = sub || '';
-    if (sub && !/^unknown artist$/i.test(sub)) {
+    if (isArtist && sub && !/^unknown artist$/i.test(sub)) {
       subSpan.title = `View artist: ${sub}`;
       subSpan.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -24805,68 +24904,68 @@ function bindCoverHoldZoom(wrapEl) {
     return [
       {
         id: 'starter_1',
-        title: 'Blinding Lights',
-        artist: 'The Weeknd',
-        thumbnail: 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/4a/6e/d6/4a6ed687-3536-f633-e578-8d4847e0a811/19UMGIM86278.rgb.jpg/600x600bb.jpg',
-        cover: 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/4a/6e/d6/4a6ed687-3536-f633-e578-8d4847e0a811/19UMGIM86278.rgb.jpg/600x600bb.jpg',
-        streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/73/a3/9f/73a39f6f-2b0e-b8ce-ffb6-96ad6fc00c62/mzaf_10586940801869828456.plus.aac.p.m4a',
-        previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/73/a3/9f/73a39f6f-2b0e-b8ce-ffb6-96ad6fc00c62/mzaf_10586940801869828456.plus.aac.p.m4a',
-        duration: 200,
+        title: 'Thriller',
+        artist: 'Michael Jackson',
+        thumbnail: 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/32/4f/fd/324ffda2-9e51-8f6a-0c2d-c6fd2b41ac55/074643811224.jpg/600x600bb.png',
+        cover: 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/32/4f/fd/324ffda2-9e51-8f6a-0c2d-c6fd2b41ac55/074643811224.jpg/600x600bb.png',
+        streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/58/8c/cb/588ccb9a-ab79-4a38-43b5-d4c24ea42859/mzaf_2083607504726567992.plus.aac.p.m4a',
+        previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/58/8c/cb/588ccb9a-ab79-4a38-43b5-d4c24ea42859/mzaf_2083607504726567992.plus.aac.p.m4a',
+        duration: 180,
         platform: 'itunes'
       },
       {
         id: 'starter_2',
-        title: 'Starboy',
-        artist: 'The Weeknd ft. Daft Punk',
-        thumbnail: 'https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/bf/16/e2/bf16e25c-0cfc-e836-e63b-6385d2633cb1/16UMGIM56641.rgb.jpg/600x600bb.jpg',
-        cover: 'https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/bf/16/e2/bf16e25c-0cfc-e836-e63b-6385d2633cb1/16UMGIM56641.rgb.jpg/600x600bb.jpg',
-        streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/cd/66/c7/cd66c7a4-e918-a83a-d68a-cf8e2c040d6b/mzaf_10793617182283995818.plus.aac.p.m4a',
-        previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/cd/66/c7/cd66c7a4-e918-a83a-d68a-cf8e2c040d6b/mzaf_10793617182283995818.plus.aac.p.m4a',
-        duration: 230,
+        title: 'Monster Mash',
+        artist: 'Bobby "Boris" Pickett & The Crypt-Kickers',
+        thumbnail: 'https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/96/4e/2e/964e2e34-975a-f9da-ea23-326fdce09941/07UMGIM07880.rgb.jpg/600x600bb.png',
+        cover: 'https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/96/4e/2e/964e2e34-975a-f9da-ea23-326fdce09941/07UMGIM07880.rgb.jpg/600x600bb.png',
+        streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/ac/1e/45/ac1e4508-6a0c-ded2-c3e0-715df9e27e58/mzaf_1451444538093662860.plus.aac.p.m4a',
+        previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/ac/1e/45/ac1e4508-6a0c-ded2-c3e0-715df9e27e58/mzaf_1451444538093662860.plus.aac.p.m4a',
+        duration: 180,
         platform: 'itunes'
       },
       {
         id: 'starter_3',
-        title: 'Save Your Tears',
-        artist: 'The Weeknd',
-        thumbnail: 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/4a/6e/d6/4a6ed687-3536-f633-e578-8d4847e0a811/19UMGIM86278.rgb.jpg/600x600bb.jpg',
-        cover: 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/4a/6e/d6/4a6ed687-3536-f633-e578-8d4847e0a811/19UMGIM86278.rgb.jpg/600x600bb.jpg',
-        streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/5a/88/54/5a885474-0f2b-98ee-125d-4f14ad313b10/mzaf_15091702484050772714.plus.aac.p.m4a',
-        previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/5a/88/54/5a885474-0f2b-98ee-125d-4f14ad313b10/mzaf_15091702484050772714.plus.aac.p.m4a',
-        duration: 215,
+        title: "Choosin' Texas",
+        artist: 'Ella Langley',
+        thumbnail: 'https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/e2/91/4d/e2914d0a-7f1d-f04c-fbf4-c50b38548838/196873638690.jpg/600x600bb.png',
+        cover: 'https://is1-ssl.mzstatic.com/image/thumb/Music221/v4/e2/91/4d/e2914d0a-7f1d-f04c-fbf4-c50b38548838/196873638690.jpg/600x600bb.png',
+        streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/38/49/4c/38494cb4-f9e0-1db4-0b84-8c478cb55390/mzaf_4251933786704889664.plus.aac.p.m4a',
+        previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/38/49/4c/38494cb4-f9e0-1db4-0b84-8c478cb55390/mzaf_4251933786704889664.plus.aac.p.m4a',
+        duration: 180,
         platform: 'itunes'
       },
       {
         id: 'starter_4',
-        title: 'As It Was',
-        artist: 'Harry Styles',
-        thumbnail: 'https://is1-ssl.mzstatic.com/image/thumb/Music122/v4/74/ad/e5/74ade5c5-e5f8-b391-7663-d1fc7dc9b1a0/886449999088.jpg/600x600bb.jpg',
-        cover: 'https://is1-ssl.mzstatic.com/image/thumb/Music122/v4/74/ad/e5/74ade5c5-e5f8-b391-7663-d1fc7dc9b1a0/886449999088.jpg/600x600bb.jpg',
-        streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview122/v4/4e/d8/bc/4ed8bc98-b80c-03ca-4f5a-c5ee69a47895/mzaf_6380963162744358661.plus.aac.p.m4a',
-        previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview122/v4/4e/d8/bc/4ed8bc98-b80c-03ca-4f5a-c5ee69a47895/mzaf_6380963162744358661.plus.aac.p.m4a',
-        duration: 167,
+        title: 'Ghostbusters',
+        artist: 'Ray Parker Jr.',
+        thumbnail: 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/9a/70/43/9a704362-976d-ec4b-0367-54d368cb0ef8/886445902204.jpg/600x600bb.png',
+        cover: 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/9a/70/43/9a704362-976d-ec4b-0367-54d368cb0ef8/886445902204.jpg/600x600bb.png',
+        streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/70/1f/f1/701ff165-58e2-75eb-464b-fec3483f93bd/mzaf_15159076127980316987.plus.aac.p.m4a',
+        previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/70/1f/f1/701ff165-58e2-75eb-464b-fec3483f93bd/mzaf_15159076127980316987.plus.aac.p.m4a',
+        duration: 180,
         platform: 'itunes'
       },
       {
         id: 'starter_5',
-        title: 'Levitating',
-        artist: 'Dua Lipa',
-        thumbnail: 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/d5/43/45/d5434557-0b1a-8533-31be-4978be05c56c/190295286106.jpg/600x600bb.jpg',
-        cover: 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/d5/43/45/d5434557-0b1a-8533-31be-4978be05c56c/190295286106.jpg/600x600bb.jpg',
-        streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/0f/52/6a/0f526af7-bc3f-7e9b-0dc2-6be4e3f42654/mzaf_11304245995222533036.plus.aac.p.m4a',
-        previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/0f/52/6a/0f526af7-bc3f-7e9b-0dc2-6be4e3f42654/mzaf_11304245995222533036.plus.aac.p.m4a',
-        duration: 203,
+        title: 'Lies (feat. Lana Del Rey)',
+        artist: 'Zach Bryan & Lana Del Rey',
+        thumbnail: 'https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/ea/98/f2/ea98f2b8-5131-29ae-2064-997234ef13bc/093624812647.jpg/600x600bb.png',
+        cover: 'https://is1-ssl.mzstatic.com/image/thumb/Music211/v4/ea/98/f2/ea98f2b8-5131-29ae-2064-997234ef13bc/093624812647.jpg/600x600bb.png',
+        streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/91/e2/a4/91e2a43b-9724-fd7f-94ed-52ec2c3897a2/mzaf_12439316399550841263.plus.aac.p.m4a',
+        previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview211/v4/91/e2/a4/91e2a43b-9724-fd7f-94ed-52ec2c3897a2/mzaf_12439316399550841263.plus.aac.p.m4a',
+        duration: 180,
         platform: 'itunes'
       },
       {
         id: 'starter_6',
-        title: 'Stay',
-        artist: 'The Kid LAROI & Justin Bieber',
-        thumbnail: 'https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/c3/09/b8/c309b8c0-2f16-0e06-9b57-69b552fa74ef/886449487967.jpg/600x600bb.jpg',
-        cover: 'https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/c3/09/b8/c309b8c0-2f16-0e06-9b57-69b552fa74ef/886449487967.jpg/600x600bb.jpg',
-        streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/33/c4/62/33c462e0-f04b-37bf-20bc-e00f5c2e99f6/mzaf_15682855217822998782.plus.aac.p.m4a',
-        previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/33/c4/62/33c462e0-f04b-37bf-20bc-e00f5c2e99f6/mzaf_15682855217822998782.plus.aac.p.m4a',
-        duration: 141,
+        title: 'This Is Halloween',
+        artist: 'The Citizens of Halloween',
+        thumbnail: 'https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/26/5c/37/265c3733-e0a5-5758-6de0-f6a9f2a1ad6d/06PNDIM00838.rgb.jpg/600x600bb.png',
+        cover: 'https://is1-ssl.mzstatic.com/image/thumb/Music126/v4/26/5c/37/265c3733-e0a5-5758-6de0-f6a9f2a1ad6d/06PNDIM00838.rgb.jpg/600x600bb.png',
+        streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/9a/cf/e4/9acfe482-1eee-1697-e4b4-277033b9f86e/mzaf_9977418176212827026.plus.aac.p.m4a',
+        previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview221/v4/9a/cf/e4/9acfe482-1eee-1697-e4b4-277033b9f86e/mzaf_9977418176212827026.plus.aac.p.m4a',
+        duration: 180,
         platform: 'itunes'
       }
     ];
@@ -24930,7 +25029,7 @@ function bindCoverHoldZoom(wrapEl) {
               const audioLink = entry.link?.find(l => l.attributes?.type === 'audio/x-m4a' || l.attributes?.rel === 'enclosure');
               const streamUrl = audioLink?.attributes?.href || '';
               const rawImg = entry['im:image']?.[2]?.label || entry['im:image']?.[1]?.label || '';
-              const cover = rawImg.replace(/\/\d+x\d+bb\./, '/600x600bb.');
+              const cover = rawImg.replace(/\/\d+x\d+bb\./, isMobileEnvironment() ? '/300x300bb.' : '/600x600bb.');
               const trackId = entry.id?.attributes?.['im:id'] || Math.random().toString(36).slice(2);
               return {
                 id: 'itunes_' + trackId,
@@ -24971,6 +25070,7 @@ function bindCoverHoldZoom(wrapEl) {
         cover: (typeof getTrackThumbUrl === 'function' ? getTrackThumbUrl(track) : '') || track.thumbnail || track.cover || '',
         title: track.title || 'Untitled',
         sub: track.artist || track.uploader || 'Unknown artist',
+        isArtist: true,
         isExplicit: isTrackExplicit(track),
         onClick: () => {
           state.isRadioQueue = false;
@@ -25071,7 +25171,7 @@ function bindCoverHoldZoom(wrapEl) {
       if (raw) cached = JSON.parse(raw);
     } catch (_) {}
 
-    if (!force && cached && cached.day === today && Array.isArray(cached.mixes)) {
+    if (!force && cached && cached.day === today && Array.isArray(cached.mixes) && cached.mixes.length > 0) {
       return cached;
     }
 
@@ -25131,10 +25231,12 @@ function bindCoverHoldZoom(wrapEl) {
       state.mixesBusy = false;
       delete state._plannedMixCount;
       if (typeof endBusy === 'function') endBusy('vibe');
-      localStorage.setItem(MIX_KEY, JSON.stringify({
-        day: today,
-        mixes: generatedMixes
-      }));
+      if (generatedMixes.length > 0) {
+        localStorage.setItem(MIX_KEY, JSON.stringify({
+          day: today,
+          mixes: generatedMixes
+        }));
+      }
       if (typeof renderMadeForYou === 'function') renderMadeForYou();
     }
     return { day: today, mixes: generatedMixes };
@@ -25157,10 +25259,10 @@ function bindCoverHoldZoom(wrapEl) {
       if (raw) cached = JSON.parse(raw);
     } catch (_) {}
 
-    const mixes = (cached && cached.day === today && Array.isArray(cached.mixes)) ? cached.mixes : [];
+    let mixes = (cached && cached.day === today && Array.isArray(cached.mixes) && cached.mixes.length > 0) ? cached.mixes : [];
     const hasWave = Array.isArray(myWaveCurrentTracks) && myWaveCurrentTracks.length > 0;
 
-    if (!cached || cached.day !== today) {
+    if (!cached || cached.day !== today || mixes.length === 0) {
       setTimeout(() => {
         if (!state.mixesBusy) generateDailyMixes(false);
       }, 3000);
@@ -25169,24 +25271,32 @@ function bindCoverHoldZoom(wrapEl) {
     if (mixes.length === 0) {
       const trCache = safeJson('lumo_trending_cache', null);
       const allTr = (trCache && Array.isArray(trCache.tracks) && trCache.tracks.length > 0) ? trCache.tracks : getStarterCuratedTracks();
+      const count = allTr.length;
+      const m1Tracks = allTr.slice(0, Math.min(6, count));
+      const m2Tracks = count >= 12 ? allTr.slice(6, 12) : (count >= 4 ? allTr.slice(2, Math.min(6, count)) : allTr);
+      const m3Tracks = count >= 18 ? allTr.slice(12, 18) : (count >= 6 ? [allTr[4], allTr[5], allTr[0], allTr[1]].filter(Boolean) : allTr);
+      const getArtList = (trList, fallback) => {
+        const names = [...new Set(trList.map(t => t.artist || t.uploader).filter(Boolean))].slice(0, 3);
+        return names.length > 0 ? names : fallback;
+      };
       mixes = [
         {
           id: 'starter_mix_1',
           title: 'Daily Mix 1',
-          artists: ['The Weeknd', 'Daft Punk', 'Top Hits'],
-          tracks: allTr.slice(0, 5)
+          artists: getArtList(m1Tracks, ['The Weeknd', 'Daft Punk', 'Top Hits']),
+          tracks: m1Tracks
         },
         {
           id: 'starter_mix_2',
           title: 'Daily Mix 2',
-          artists: ['Hip-Hop & Beats', 'Trending Now'],
-          tracks: allTr.slice(1, 6)
+          artists: getArtList(m2Tracks, ['Hip-Hop & Beats', 'Trending Now']),
+          tracks: m2Tracks
         },
         {
           id: 'starter_mix_3',
           title: 'Daily Mix 3',
-          artists: ['Chill Vibes', 'Acoustic & R&B'],
-          tracks: allTr.slice(2, 7)
+          artists: getArtList(m3Tracks, ['Chill Vibes', 'Acoustic & R&B']),
+          tracks: m3Tracks
         }
       ];
     }
@@ -25205,31 +25315,16 @@ function bindCoverHoldZoom(wrapEl) {
         onClick: playMyWave
       });
     } else {
-      myWaveCard = document.createElement('div');
-      myWaveCard.className = 'sp-card';
-      const coverWrap = document.createElement('div');
-      coverWrap.className = 'sp-card-cover';
-      coverWrap.style.display = 'flex';
-      coverWrap.style.alignItems = 'center';
-      coverWrap.style.justifyContent = 'center';
-      coverWrap.innerHTML = `
-        <div class="m3-spinner-container" style="width: 32px; height: 32px; background: transparent;">
-          <svg class="m3-circular-progress" viewBox="0 0 48 48" style="width: 24px; height: 24px;">
-            <circle class="m3-spinner-track" cx="24" cy="24" r="18" fill="none" stroke-width="4"></circle>
-            <circle class="m3-spinner-head" cx="24" cy="24" r="18" fill="none" stroke-width="4"></circle>
-          </svg>
-        </div>
-      `;
-      const titleEl = document.createElement('div');
-      titleEl.className = 'sp-card-title sp-fade';
-      titleEl.textContent = 'For you';
-      const subEl = document.createElement('div');
-      subEl.className = 'sp-card-sub sp-fade';
-      subEl.textContent = 'Based on your taste';
-      myWaveCard.appendChild(coverWrap);
-      myWaveCard.appendChild(titleEl);
-      myWaveCard.appendChild(subEl);
-      myWaveCard.addEventListener('click', playMyWave);
+      const trCache = safeJson('lumo_trending_cache', null);
+      const allTr = (trCache && Array.isArray(trCache.tracks) && trCache.tracks.length > 0) ? trCache.tracks : getStarterCuratedTracks();
+      const firstStarter = allTr[0] || {};
+      const waveThumb = (typeof getTrackThumbUrl === 'function' ? getTrackThumbUrl(firstStarter) : '') || firstStarter.thumbnail || firstStarter.cover || '';
+      myWaveCard = spCard({
+        cover: waveThumb,
+        title: 'For you',
+        sub: 'My Wave & Radio',
+        onClick: playMyWave
+      });
     }
     row.appendChild(myWaveCard);
 
@@ -25318,13 +25413,13 @@ function bindCoverHoldZoom(wrapEl) {
     if (isShowingPopular) {
       if (secTitle) secTitle.textContent = 'Popular Artists';
       artists = [
-        { name: 'The Weeknd', avatar: 'https://i.scdn.co/image/ab6761610000e5ebbba74d8174549f3e46c750b3' },
-        { name: 'Drake', avatar: 'https://i.scdn.co/image/ab6761610000e5eb4293385d324db8558179afd9' },
-        { name: 'Taylor Swift', avatar: 'https://i.scdn.co/image/ab6761610000e5ebe672b5f553298dcdccb0e676' },
-        { name: 'Billie Eilish', avatar: 'https://i.scdn.co/image/ab6761610000e5eb7974eb441b14a2b97fe31534' },
-        { name: 'Travis Scott', avatar: 'https://i.scdn.co/image/ab6761610000e5ebe74288b5ec20f5b47a9ec49b' },
-        { name: 'Eminem', avatar: 'https://i.scdn.co/image/ab6761610000e5eba00b11c129b27a88fc72f36b' },
-        { name: 'Ariana Grande', avatar: 'https://i.scdn.co/image/ab6761610000e5ebcdce7620dc940db07077278d' }
+        { name: 'The Weeknd', avatar: 'https://cdn-images.dzcdn.net/images/artist/581693b4724a7fcfa754455101e13a44/250x250-000000-80-0-0.jpg', fans: 14769660 },
+        { name: 'Drake', avatar: 'https://cdn-images.dzcdn.net/images/artist/eb0ed5b21d1ea5af021fc074ded0e91f/250x250-000000-80-0-0.jpg', fans: 24120907 },
+        { name: 'Taylor Swift', avatar: 'https://cdn-images.dzcdn.net/images/artist/cc2495870fe1a792ad0cdb05501ad5ec/250x250-000000-80-0-0.jpg', fans: 12764324 },
+        { name: 'Billie Eilish', avatar: 'https://cdn-images.dzcdn.net/images/artist/8eab1a9a644889aabaca1e193e05f984/250x250-000000-80-0-0.jpg', fans: 9290864 },
+        { name: 'Travis Scott', avatar: 'https://cdn-images.dzcdn.net/images/artist/8d8316146026d7e6ce377e314536df62/250x250-000000-80-0-0.jpg', fans: 3155182 },
+        { name: 'Eminem', avatar: 'https://cdn-images.dzcdn.net/images/artist/0f30bbd33a680030054af004d698d6ac/250x250-000000-80-0-0.jpg', fans: 19162375 },
+        { name: 'Ariana Grande', avatar: 'https://cdn-images.dzcdn.net/images/artist/721d8fab84b315502de422b8d0901509/250x250-000000-80-0-0.jpg', fans: 13458229 }
       ];
     } else {
       if (secTitle) secTitle.textContent = 'Favorite Artists';

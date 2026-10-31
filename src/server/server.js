@@ -1,3 +1,4 @@
+process.noDeprecation = true;
 const http = require('http');
 const https = require('https');
 const keepAliveHttpsAgent = new https.Agent({

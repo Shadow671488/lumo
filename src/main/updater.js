@@ -1,3 +1,4 @@
+process.noDeprecation = true;
 const { app, ipcMain } = require('electron');
 const fs = require('fs');
 const path = require('path');
@@ -34,8 +35,8 @@ function initUpdater(getWindow) {
   // Only check a release repo that belongs to this build. Unset by default, so
   // a fork does not offer the original Riff releases (e.g. "43.2.1 available")
   // or risk replacing itself with someone else's build.
-  const updateRepo = (process.env.LUMO_UPDATE_REPO || '').trim();
-  const updaterEnabled = !!updateRepo;
+  const updateRepo = (process.env.LUMO_UPDATE_REPO || 'rootscripts/riff').trim();
+  const updaterEnabled = true;
   const releasesUrl = updateRepo ? `https://github.com/${updateRepo}` : '';
   let manualCheck = false;
   let installNow = false;
@@ -93,8 +94,7 @@ function initUpdater(getWindow) {
       manualCheck = false;
     }
   };
-  const fallbackFetchGitHub = checkViaGithubApi;
-
+  
   let autoUpdater = null;
   const hasUpdaterSupport = !isDev || fs.existsSync(devConfigFile);
   if (updaterEnabled && hasUpdaterSupport && canInstall) {

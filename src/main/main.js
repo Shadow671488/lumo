@@ -1,3 +1,4 @@
+process.noDeprecation = true;
 const { app, BrowserWindow, dialog, ipcMain, screen, shell, Tray, Menu, nativeImage, globalShortcut, powerMonitor, session, safeStorage } = require('electron');
 const fs = require('fs');
 const path = require('path');

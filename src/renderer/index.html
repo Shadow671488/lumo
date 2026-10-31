@@ -3426,7 +3426,32 @@
     </div>
   </div>
 
-  <div class="modal-backdrop hidden" id="update-modal"><div class="settings-card"><div class="settings-card-header"><div class="settings-title-group"><h3 id="update-title">Update available</h3></div><button class="btn-icon-pill" id="btn-close-update" title="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button></div><p id="update-text" class="custom-lyrics-desc"></p><div class="update-progress hidden" id="update-progress"><i></i></div><div class="download-modal-actions"><button class="btn-outline-pill" id="btn-update-ignore">Skip this version</button><button class="btn-outline-pill" id="btn-update-later">Install on exit</button><button class="btn-pill-primary" id="btn-update-now">Update now</button></div></div></div>
+    <div class="modal-backdrop ota-update-backdrop hidden" id="update-modal">
+    <div class="ota-update-sheet" id="update-sheet-card">
+      <div class="ota-update-time" id="update-release-time">Just now</div>
+      <div class="ota-update-top-row">
+        <span class="ota-update-version" id="update-version-badge">v44.0.0</span>
+        <div class="ota-update-actions">
+          <button class="ota-btn-update" id="btn-update-now" type="button" data-i18n>Update</button>
+          <button class="ota-btn-ignore" id="btn-update-later" type="button" data-i18n>Ignore</button>
+        </div>
+      </div>
+      <div class="ota-update-body" id="update-body-grid">
+        <div class="ota-update-notes" id="update-notes"></div>
+        <div class="ota-update-banner-wrap hidden" id="update-banner-wrap">
+          <img id="update-banner-img" src="" alt="Release banner" draggable="false" />
+        </div>
+      </div>
+      <div class="update-progress-wrap hidden" id="update-progress-wrap" style="display:none !important;">
+        <div class="update-progress-bar"><div class="update-progress-fill" id="update-progress-fill"></div></div>
+        <span class="update-progress-label" id="update-progress-label">0%</span>
+      </div>
+    </div>
+    <div class="ota-center-spinner hidden" id="update-center-spinner">
+      <svg class="g-spinner" width="46" height="46" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20"/></svg>
+      <span class="ota-spinner-label" id="update-spinner-label" data-i18n>Updating Lumo...</span>
+    </div>
+  </div>
 
   <div class="modal-backdrop hidden" id="sync-mode-overlay">
     <div class="settings-card sync-mode-card">

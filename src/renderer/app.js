@@ -18832,9 +18832,7 @@ function bindCoverHoldZoom(wrapEl) {
   (function initUpdateUI() {
     const api = window.electronAPI;
     const $ = (id) => document.getElementById(id);
-    const modal = $('update-modal'), title = $('update-title'), text = $('update-text'), bar = $('update-progress');
-    const nowB = $('btn-update-now'), laterB = $('btn-update-later'), ignoreB = $('btn-update-ignore');
-    let currentAppVersion = '43.0.0';
+    let currentAppVersion = '44.0.0';
     if (api && api.getAppVersion) {
       api.getAppVersion().then((v) => {
         if (v) {
@@ -18857,6 +18855,94 @@ function bindCoverHoldZoom(wrapEl) {
     let checkTimeoutId = null;
     let fallbackReleaseUrl = 'https://github.com/rootscripts/riff/releases/latest';
     let canNativeInstall = false;
+
+    let latestUpdateInfo = null;
+    let isUpdateDownloaded = false;
+    let isWaitingToRestart = false;
+
+    function formatRelativeReleaseTime(isoDateStr) {
+      if (!isoDateStr) return 'New release';
+      const ts = Date.parse(isoDateStr);
+      if (!Number.isFinite(ts)) return 'New release';
+      const diffSec = Math.max(60, Math.floor((Date.now() - ts) / 1000));
+      if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`;
+      if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`;
+      if (diffSec < 2592000) return `${Math.floor(diffSec / 86400)}d ago`;
+      return `${Math.floor(diffSec / 2592000)}mo ago`;
+    }
+
+    function parseGithubReleaseBodyAndBanner(rawNotes) {
+      let text = String(rawNotes || '');
+      let bannerUrl = '';
+      const htmlImgMatch = text.match(/<img[^>]+src=["'](https?:\/\/[^"']+)["'][^>]*>/i);
+      if (htmlImgMatch && htmlImgMatch[1]) {
+        bannerUrl = htmlImgMatch[1].trim();
+        text = text.replace(/<img[^>]*>/gi, '');
+      } else {
+        const mdImgMatch = text.match(/!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)/i);
+        if (mdImgMatch && mdImgMatch[1]) {
+          bannerUrl = mdImgMatch[1].trim();
+          text = text.replace(/!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)/gi, '');
+        }
+      }
+      text = text
+        .replace(/<\/?(?:p|div|br|h[1-6]|ul|ol|li|strong|em|b|i|code|pre|blockquote|hr)[^>]*>/gi, '\n')
+        .replace(/<[^>]+>/g, '')
+        .replace(/^#{1,6}\s+.*$/gm, (m) => m.replace(/^#{1,6}\s+/, ''))
+        .replace(/^\s*[-*•]\s+/gm, '• ')
+        .replace(/\*\*([^*]+)\*\*/g, '$1')
+        .replace(/`([^`]+)`/g, '$1')
+        .replace(/\n{3,}/g, '\n\n')
+        .trim();
+      return { cleanText: text, bannerUrl };
+    }
+
+    function populateOtaUpdateSheet(info) {
+      const modal = document.getElementById('update-modal');
+      const sheet = document.getElementById('update-sheet-card');
+      const spinnerBox = document.getElementById('update-center-spinner');
+      const timeEl = document.getElementById('update-release-time');
+      const verEl = document.getElementById('update-version-badge');
+      const notesEl = document.getElementById('update-notes');
+      const bannerWrap = document.getElementById('update-banner-wrap');
+      const bannerImg = document.getElementById('update-banner-img');
+      const bodyGrid = document.getElementById('update-body-grid');
+      if (!modal || !sheet || !notesEl) return;
+
+      const rawVer = String(info?.version || '').replace(/^v/i, '');
+      const ignoredVer = localStorage.getItem('riff_ignored_update_ver') || '';
+      if (!manualUpdateCheck && rawVer && ignoredVer === rawVer) return;
+
+      const displayVer = rawVer.endsWith('.0.0') ? ('v' + rawVer.slice(0, -4)) : (rawVer.endsWith('.0') ? ('v' + rawVer.slice(0, -2)) : ('v' + rawVer));
+      if (verEl) verEl.textContent = displayVer || 'v44';
+      if (timeEl) timeEl.textContent = formatRelativeReleaseTime(info?.publishedAt || info?.releaseDate || '');
+
+      const { cleanText, bannerUrl } = parseGithubReleaseBodyAndBanner(info?.releaseNotes || '');
+      notesEl.innerHTML = '';
+      const paragraphs = (cleanText || 'Bug fixes, playback improvements, and UI polish.').split(/\n+/).map(s => s.trim()).filter(Boolean);
+      paragraphs.forEach((line) => {
+        const p = document.createElement('p');
+        p.textContent = line;
+        notesEl.appendChild(p);
+      });
+
+      if (bannerUrl && bannerWrap && bannerImg) {
+        bannerImg.src = bannerUrl;
+        bannerWrap.classList.remove('hidden');
+        if (bodyGrid) bodyGrid.classList.remove('no-banner');
+        bannerImg.onerror = () => {
+          bannerWrap.classList.add('hidden');
+          if (bodyGrid) bodyGrid.classList.add('no-banner');
+        };
+      } else {
+        if (bannerWrap) bannerWrap.classList.add('hidden');
+        if (bodyGrid) bodyGrid.classList.add('no-banner');
+      }
+
+      sheet.classList.remove('leaving');
+      if (spinnerBox) spinnerBox.classList.add('hidden');
+      modal.classList.remove('hidden');
+    }
 
     function restoreButton() {
       manualUpdateCheck = false;
@@ -18882,29 +18968,6 @@ function bindCoverHoldZoom(wrapEl) {
       return false;
     }
 
-    function showUpdateModal(d) {
-      if (!modal) return;
-      canNativeInstall = !!d.canInstall;
-      fallbackReleaseUrl = d.htmlUrl || d.url || 'https://github.com/rootscripts/riff/releases/latest';
-      if (title) title.textContent = 'Upstream update: Riff ' + d.version;
-      if (bar) { bar.classList.add('hidden'); if (bar.firstElementChild) bar.firstElementChild.style.width = '0'; }
-      if (nowB) {
-        nowB.disabled = false;
-        nowB.classList.remove('hidden');
-        nowB.textContent = 'Sync Lumo (Keep Custom)';
-      }
-      if (laterB) {
-        laterB.disabled = false;
-        laterB.classList.remove('hidden');
-        laterB.textContent = 'View Changelog';
-      }
-      if (text) {
-        const notes = d.releaseNotes ? `<div style="margin-top:8px;font-size:12px;opacity:0.85;max-height:140px;overflow-y:auto;white-space:pre-wrap;border-radius:8px;background:rgba(255,255,255,0.06);padding:8px 10px;">${escapeHtml(d.releaseNotes)}</div>` : '';
-        text.innerHTML = `<div>A new official Riff update (v${escapeHtml(d.version)}) is available with bug fixes.</div><div style="font-size:12px;opacity:0.75;margin-top:4px;">Syncing pulls official engine bugfixes while preserving all your custom Lumo features, profiles, and Oxeez branding.</div>${notes}`;
-      }
-      openModal(modal);
-    }
-
     async function checkDirectFromRenderer() {
       try {
         if (!navigator.onLine) {
@@ -18920,12 +18983,14 @@ function bindCoverHoldZoom(wrapEl) {
         const latestVersion = (json.tag_name || '').replace(/^v/i, '');
         fallbackReleaseUrl = json.html_url || 'https://github.com/rootscripts/riff/releases/latest';
         if (isNewerVersion(latestVersion, currentAppVersion)) {
-          showUpdateModal({
+          latestUpdateInfo = {
             version: latestVersion,
             releaseNotes: json.body || '',
+            publishedAt: json.published_at || '',
             htmlUrl: fallbackReleaseUrl,
             canInstall: false
-          });
+          };
+          populateOtaUpdateSheet(latestUpdateInfo);
           restoreButton();
         } else {
           restoreButton();
@@ -18942,7 +19007,7 @@ function bindCoverHoldZoom(wrapEl) {
         if (manualUpdateCheck) return;
         manualUpdateCheck = true;
         btn.disabled = true;
-        btn.innerHTML = `<svg class="g-spinner" style="width:14px;height:14px;margin-right:6px;" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20"/></svg><span>Checking...</span>`;
+        btn.innerHTML = '<svg class="m3-btn-shape-spinner" style="width:16px;height:16px;margin-right:6px;" viewBox="-180 -180 360 360"><path fill="currentColor"/></svg><span>Checking...</span>';
 
         if (!api || !api.checkForUpdates) {
           checkDirectFromRenderer();
@@ -18969,13 +19034,63 @@ function bindCoverHoldZoom(wrapEl) {
     }
 
     if (api && api.onUpdateAvailable) {
-      api.onUpdateAvailable((d) => {
+      api.onUpdateAvailable(async (info) => {
         restoreButton();
-        showUpdateModal(d);
+        latestUpdateInfo = { ...(info || {}) };
+        canNativeInstall = !!info?.canInstall;
+
+        const hasImg = latestUpdateInfo.releaseNotes && /<img/i.test(latestUpdateInfo.releaseNotes);
+        const hasPublishedAt = !!latestUpdateInfo.publishedAt;
+
+        if (!hasImg || !hasPublishedAt) {
+          try {
+            const res = await fetch('https://api.github.com/repos/rootscripts/riff/releases/latest', {
+              headers: { 'User-Agent': 'Riff-Player' }
+            });
+            if (res.ok) {
+              const gh = await res.json();
+              if (gh.body) latestUpdateInfo.releaseNotes = gh.body;
+              if (gh.published_at) latestUpdateInfo.publishedAt = gh.published_at;
+              if (gh.html_url) latestUpdateInfo.htmlUrl = gh.html_url;
+              if (gh.tag_name && !latestUpdateInfo.version) latestUpdateInfo.version = gh.tag_name;
+            }
+          } catch (_) {}
+        }
+
+        populateOtaUpdateSheet(latestUpdateInfo);
       });
     }
+
+    const onDownloaded = (info) => {
+      isUpdateDownloaded = true;
+      if (info && !latestUpdateInfo) {
+        latestUpdateInfo = { ...info };
+      }
+      if (isWaitingToRestart) {
+        setTimeout(() => {
+          if (window.electronAPI && window.electronAPI.installUpdateNow) {
+            window.electronAPI.installUpdateNow();
+          } else if (window.electronAPI && window.electronAPI.updateAction) {
+            window.electronAPI.updateAction('now');
+          }
+        }, 600);
+      } else {
+        const modal = document.getElementById('update-modal');
+        if (modal && modal.classList.contains('hidden')) {
+          populateOtaUpdateSheet(latestUpdateInfo || info);
+        }
+      }
+    };
+
+    if (api && api.onUpdateDownloaded) {
+      api.onUpdateDownloaded(onDownloaded);
+    }
+    if (api && api.onUpdateReady) {
+      api.onUpdateReady(onDownloaded);
+    }
+
     if (api && api.onUpdateNotAvailable) {
-      api.onUpdateNotAvailable((d) => {
+      api.onUpdateNotAvailable(() => {
         const wasManual = manualUpdateCheck;
         restoreButton();
         if (wasManual) {
@@ -18983,70 +19098,109 @@ function bindCoverHoldZoom(wrapEl) {
         }
       });
     }
+
     if (api && api.onUpdateError) {
-      api.onUpdateError((d) => {
+      api.onUpdateError(() => {
         const wasManual = manualUpdateCheck;
         restoreButton();
-        if (wasManual) {
+        if (isWaitingToRestart) {
+          isWaitingToRestart = false;
+          if (latestUpdateInfo?.htmlUrl) {
+            window.open(latestUpdateInfo.htmlUrl, '_blank');
+          } else {
+            try {
+              if (window.electronAPI && window.electronAPI.installUpdateNow) {
+                window.electronAPI.installUpdateNow();
+              }
+            } catch (_) {}
+          }
+        } else if (wasManual) {
           showToast('Could not check for updates', 'error');
         }
       });
     }
+
     if (api && api.onUpdateProgress) {
       api.onUpdateProgress((d) => {
-        if (bar) { bar.classList.remove('hidden'); if (bar.firstElementChild) bar.firstElementChild.style.width = d.percent + '%'; }
-        if (text) text.textContent = 'Downloading... ' + d.percent + '%';
-      });
-    }
-    if (api && api.onUpdateReady) {
-      api.onUpdateReady(() => {
-        if (text) text.textContent = 'Update downloaded. It will be installed when you close Lumo.';
-        if (nowB) nowB.classList.add('hidden');
-        if (laterB) laterB.classList.add('hidden');
+        const fill = document.getElementById('update-progress-fill');
+        const label = document.getElementById('update-progress-label');
+        if (fill) fill.style.width = (d?.percent || 0) + '%';
+        if (label) label.textContent = (d?.percent || 0) + '%';
       });
     }
 
-    if (nowB) {
-      nowB.addEventListener('click', async () => {
+    const btnUpdateNow = document.getElementById('btn-update-now');
+    if (btnUpdateNow) {
+      btnUpdateNow.addEventListener('click', async () => {
+        const sheet = document.getElementById('update-sheet-card');
+        const spinnerBox = document.getElementById('update-center-spinner');
+        if (sheet) sheet.classList.add('leaving');
+        if (spinnerBox) spinnerBox.classList.remove('hidden');
+
         if (api && api.runSyncUpstream) {
-          nowB.disabled = true;
-          if (laterB) laterB.disabled = true;
-          if (text) text.innerHTML = '<div style="display:flex;align-items:center;gap:8px;"><svg class="g-spinner" style="width:16px;height:16px;" viewBox="0 0 48 48"><circle cx="24" cy="24" r="20"/></svg><span>Syncing upstream bug fixes into Lumo...</span></div>';
           try {
             const res = await api.runSyncUpstream();
-            if (res && res.ok) {
-              showToastNow('Lumo successfully synced with upstream Riff! All custom features preserved.', 'success');
-              if (modal) closeModal(modal);
-            } else {
-              showToastNow('Sync completed. Run sync-upstream.bat for details.', 'info');
-              if (modal) closeModal(modal);
-            }
-          } catch (e) {
-            showToastNow('To sync: run sync-upstream.bat in your Lumo folder.', 'info');
-            if (modal) closeModal(modal);
+            if (spinnerBox) spinnerBox.classList.add('hidden');
+            const modal = document.getElementById('update-modal');
+            if (modal) modal.classList.add('hidden');
+            showToastNow(res && res.ok ? 'Update completed! Restart to apply.' : 'Update check completed.', 'success');
+          } catch (_) {
+            if (spinnerBox) spinnerBox.classList.add('hidden');
+            const modal = document.getElementById('update-modal');
+            if (modal) modal.classList.add('hidden');
           }
-        } else {
-          showToastNow('Run sync-upstream.bat in your Lumo directory to merge fixes while keeping custom features.', 'info');
-          if (modal) closeModal(modal);
+          return;
+        }
+
+        if (isUpdateDownloaded) {
+          setTimeout(() => {
+            if (window.electronAPI && window.electronAPI.installUpdateNow) {
+              window.electronAPI.installUpdateNow();
+            } else if (window.electronAPI && window.electronAPI.updateAction) {
+              window.electronAPI.updateAction('now');
+            }
+          }, 900);
+          return;
+        }
+
+        if (!canNativeInstall) {
+          if (latestUpdateInfo?.htmlUrl) {
+            window.open(latestUpdateInfo.htmlUrl, '_blank');
+          } else {
+            try {
+              if (window.electronAPI && window.electronAPI.installUpdateNow) {
+                window.electronAPI.installUpdateNow();
+              }
+            } catch (_) {}
+          }
+          if (spinnerBox) spinnerBox.classList.add('hidden');
+          const modal = document.getElementById('update-modal');
+          if (modal) modal.classList.add('hidden');
+          return;
+        }
+
+        isWaitingToRestart = true;
+        if (api && api.updateAction) {
+          api.updateAction('now');
         }
       });
     }
-    if (laterB) {
-      laterB.addEventListener('click', () => {
-        window.open(fallbackReleaseUrl || 'https://github.com/rootscripts/riff/releases/latest', '_blank');
-        if (modal) closeModal(modal);
-      });
-    }
-    if (ignoreB) {
-      ignoreB.addEventListener('click', () => {
-        if (api && api.updateAction) api.updateAction('ignore');
-        if (modal) closeModal(modal);
-      });
-    }
-    const btnCloseUpdate = $('btn-close-update');
-    if (btnCloseUpdate) {
-      btnCloseUpdate.addEventListener('click', () => {
-        if (modal) closeModal(modal);
+
+    const btnUpdateLater = document.getElementById('btn-update-later');
+    if (btnUpdateLater) {
+      btnUpdateLater.addEventListener('click', () => {
+        if (latestUpdateInfo?.version) {
+          localStorage.setItem('riff_ignored_update_ver', String(latestUpdateInfo.version).replace(/^v/i, ''));
+        }
+        if (api && api.updateAction) {
+          api.updateAction('ignore');
+        }
+        const sheet = document.getElementById('update-sheet-card');
+        const modal = document.getElementById('update-modal');
+        if (sheet) sheet.classList.add('leaving');
+        setTimeout(() => {
+          if (modal) modal.classList.add('hidden');
+        }, 260);
       });
     }
   })();

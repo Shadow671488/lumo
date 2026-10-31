@@ -1,5 +1,8 @@
 'use strict';
 
+process.noDeprecation = true;
+process.env.NODE_OPTIONS = ((process.env.NODE_OPTIONS || '') + ' --no-deprecation').trim();
+
 // Launches the app through Lumo.exe on Windows so Task Manager and the Windows
 // Volume Mixer show "Lumo" (and its icon) instead of "Electron". Falls back to
 // the regular electron binary on other platforms or if Lumo.exe is missing.
@@ -21,7 +24,7 @@ try {
   process.exit(1);
 }
 
-const child = spawn(exe, [appDir, ...extraArgs], {
+const child = spawn(exe, ['--no-deprecation', appDir, ...extraArgs], {
   cwd: appDir,
   stdio: 'inherit',
   windowsHide: false,

@@ -15,8 +15,8 @@ function writeIgnored(file, version) {
 }
 
 function isNewer(latest, current) {
-  const p1 = String(latest || '').split('.').map(n => parseInt(n, 10) || 0);
-  const p2 = String(current || '').split('.').map(n => parseInt(n, 10) || 0);
+  const p1 = String(latest || '').replace(/^v/i, '').split('.').map(n => parseInt(n, 10) || 0);
+  const p2 = String(current || '').replace(/^v/i, '').split('.').map(n => parseInt(n, 10) || 0);
   for (let i = 0; i < Math.max(p1.length, p2.length); i++) {
     const a = p1[i] || 0;
     const b = p2[i] || 0;
@@ -32,9 +32,6 @@ function initUpdater(getWindow) {
   if (pkg.version) {
     app.setVersion(pkg.version);
   }
-  // Only check a release repo that belongs to this build. Unset by default, so
-  // a fork does not offer the original Riff releases (e.g. "43.2.1 available")
-  // or risk replacing itself with someone else's build.
   const publishTarget = (pkg.build && pkg.build.publish && pkg.build.publish[0]) || {};
   const defaultRepo = (publishTarget.owner && publishTarget.repo) ? (publishTarget.owner + '/' + publishTarget.repo) : 'Shadow671488/lumo';
   const updateRepo = (process.env.LUMO_UPDATE_REPO || defaultRepo).trim();
@@ -42,6 +39,7 @@ function initUpdater(getWindow) {
   const releasesUrl = updateRepo ? `https://github.com/${updateRepo}` : '';
   let manualCheck = false;
   let installNow = false;
+  let isDownloaded = false;
   let current = null;
 
   try { ipcMain.removeHandler('get-app-version'); } catch (_) {}
@@ -56,6 +54,64 @@ function initUpdater(getWindow) {
     if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
   };
 
+  const fetchLatestReleaseInfo = async () => {
+    let latestVer = '';
+    let releaseNotes = '';
+    let publishedAt = '';
+    let htmlUrl = releasesUrl ? `${releasesUrl}/releases/latest` : '';
+
+    // 1. Check latest.yml directly from GitHub CDN (NO RATE LIMIT)
+    try {
+      const ymlRes = await fetch(`https://github.com/${updateRepo}/releases/latest/download/latest.yml`, {
+        cache: 'no-cache',
+        headers: { 'User-Agent': 'Lumo-Player' }
+      });
+      if (ymlRes.ok) {
+        const ymlText = await ymlRes.text();
+        const mVer = ymlText.match(/version:\s*([^\s\r\n]+)/);
+        if (mVer && mVer[1]) latestVer = mVer[1].replace(/^v/i, '').trim();
+        const mDate = ymlText.match(/releaseDate:\s*['"]?([^'"\r\n]+)['"]?/);
+        if (mDate && mDate[1]) publishedAt = mDate[1].trim();
+      }
+    } catch (_) {}
+
+    // 2. Check GitHub web json endpoint (NO RATE LIMIT)
+    try {
+      const webRes = await fetch(`https://github.com/${updateRepo}/releases/latest`, {
+        headers: { 'Accept': 'application/json', 'User-Agent': 'Lumo-Player' }
+      });
+      if (webRes.ok) {
+        const webJson = await webRes.json();
+        if (webJson.tag_name && !latestVer) {
+          latestVer = webJson.tag_name.replace(/^v/i, '').trim();
+        }
+        if (webJson.body && !releaseNotes) releaseNotes = webJson.body;
+        if (webJson.published_at && !publishedAt) publishedAt = webJson.published_at;
+        if (webJson.update_url) htmlUrl = `https://github.com${webJson.update_url}`;
+      }
+    } catch (_) {}
+
+    // 3. Fallback to atom feed (NO RATE LIMIT)
+    if (!latestVer) {
+      try {
+        const atomRes = await fetch(`https://github.com/${updateRepo}/releases.atom`, {
+          headers: { 'User-Agent': 'Lumo-Player' }
+        });
+        if (atomRes.ok) {
+          const atomXml = await atomRes.text();
+          const m = atomXml.match(/<title>v?([0-9]+\.[0-9]+\.[0-9]+)<\/title>/i);
+          if (m && m[1]) latestVer = m[1].trim();
+        }
+      } catch (_) {}
+    }
+
+    if (!htmlUrl && latestVer) {
+      htmlUrl = `${releasesUrl}/releases/tag/v${latestVer}`;
+    }
+
+    return { latestVer, releaseNotes, publishedAt, htmlUrl };
+  };
+
   const fallbackFetchGitHub = async () => {
     if (!updaterEnabled) {
       if (manualCheck) send('update-not-available', { version: pkg.version || app.getVersion() });
@@ -63,25 +119,25 @@ function initUpdater(getWindow) {
       return;
     }
     try {
-      const res = await fetch(`https://api.github.com/repos/${updateRepo}/releases/latest`, {
-        headers: { 'User-Agent': 'Lumo-Player' }
-      });
-      if (!res.ok) throw new Error('HTTP ' + res.status);
-      const json = await res.json();
-      const latestVer = (json.tag_name || '').replace(/^v/i, '');
+      const info = await fetchLatestReleaseInfo();
       const currentVersion = pkg.version || app.getVersion();
-      if (isNewer(latestVer, currentVersion)) {
-        current = { version: latestVer, releaseNotes: json.body || '', publishedAt: json.published_at || '', htmlUrl: json.html_url || '' };
-        const ignored = readIgnored(ignoreFile) === latestVer;
+      if (info.latestVer && isNewer(info.latestVer, currentVersion)) {
+        current = {
+          version: info.latestVer,
+          releaseNotes: info.releaseNotes || '',
+          publishedAt: info.publishedAt || '',
+          htmlUrl: info.htmlUrl || `${releasesUrl}/tag/v${info.latestVer}`
+        };
+        const ignored = readIgnored(ignoreFile) === info.latestVer;
         if (ignored && !manualCheck) return;
         manualCheck = false;
         send('update-available', {
-          version: latestVer,
-          releaseNotes: json.body || '',
-          publishedAt: json.published_at || '',
-          htmlUrl: json.html_url || '',
+          version: info.latestVer,
+          releaseNotes: info.releaseNotes || '',
+          publishedAt: info.publishedAt || '',
+          htmlUrl: info.htmlUrl || `${releasesUrl}/tag/v${info.latestVer}`,
           canInstall: false,
-          url: json.html_url || `${releasesUrl}/tag/v${latestVer}`
+          url: info.htmlUrl || `${releasesUrl}/tag/v${info.latestVer}`
         });
       } else {
         if (manualCheck) {
@@ -96,7 +152,7 @@ function initUpdater(getWindow) {
       manualCheck = false;
     }
   };
-  
+
   let autoUpdater = null;
   const hasUpdaterSupport = !isDev || fs.existsSync(devConfigFile);
   if (updaterEnabled && hasUpdaterSupport && canInstall) {
@@ -106,8 +162,6 @@ function initUpdater(getWindow) {
       if (isDev) autoUpdater.forceDevUpdateConfig = true;
       autoUpdater.autoDownload = true;
       autoUpdater.autoInstallOnAppQuit = true;
-
-      let isDownloaded = false;
 
       autoUpdater.on('update-available', async (info) => {
         current = info;
@@ -120,15 +174,10 @@ function initUpdater(getWindow) {
         let htmlUrl = `${releasesUrl}/tag/v${info.version}`;
 
         try {
-          const res = await fetch('https://api.github.com/repos/' + updateRepo + '/releases/latest', {
-            headers: { 'User-Agent': 'Riff-Player' }
-          });
-          if (res.ok) {
-            const json = await res.json();
-            if (json.body) releaseNotes = json.body;
-            if (json.published_at) publishedAt = json.published_at;
-            if (json.html_url) htmlUrl = json.html_url;
-          }
+          const fetched = await fetchLatestReleaseInfo();
+          if (fetched.releaseNotes) releaseNotes = fetched.releaseNotes;
+          if (fetched.publishedAt) publishedAt = fetched.publishedAt;
+          if (fetched.htmlUrl) htmlUrl = fetched.htmlUrl;
         } catch (_) {}
 
         current.releaseNotes = releaseNotes;
@@ -138,7 +187,7 @@ function initUpdater(getWindow) {
         send('update-available', {
           version: info.version,
           canInstall,
-          url: `${releasesUrl}/tag/v${info.version}`,
+          url: htmlUrl,
           releaseNotes,
           publishedAt,
           htmlUrl
@@ -191,8 +240,29 @@ function initUpdater(getWindow) {
   try { ipcMain.removeHandler('update-check'); } catch (_) {}
   ipcMain.handle('update-check', () => {
     manualCheck = true;
+    if (isDownloaded && current) {
+      send('update-ready', { version: current.version });
+      send('update-downloaded', {
+        version: current.version,
+        releaseNotes: current.releaseNotes || '',
+        publishedAt: current.publishedAt || '',
+        htmlUrl: current.htmlUrl || '',
+        canInstall: true
+      });
+      return { ok: true, downloaded: true };
+    }
+    if (current && isNewer(current.version, pkg.version || app.getVersion())) {
+      send('update-available', {
+        version: current.version,
+        canInstall,
+        url: current.htmlUrl || `${releasesUrl}/tag/v${current.version}`,
+        releaseNotes: current.releaseNotes || '',
+        publishedAt: current.publishedAt || '',
+        htmlUrl: current.htmlUrl || ''
+      });
+    }
     check();
-    return { ok: true };
+    return { ok: true, downloaded: isDownloaded };
   });
 
   const doInstallNow = () => {

@@ -15935,6 +15935,12 @@ function bindCoverHoldZoom(wrapEl) {
       if (el.valIntensity) el.valIntensity.textContent = '50%';
       document.body.classList.remove('intensity-zero');
     }
+    if (state.themeBrightness < 10) {
+      state.themeBrightness = 50;
+      localStorage.setItem('lumo_theme_brightness', '50');
+      if (el.sliderBrightness) el.sliderBrightness.value = 50;
+      if (el.valBrightness) el.valBrightness.textContent = '50%';
+    }
   }
 
   if (el.themeSwatches) {
@@ -18994,20 +19000,58 @@ function bindCoverHoldZoom(wrapEl) {
           showToast('Could not check for updates', 'error');
           return;
         }
-        const res = await fetch('https://api.github.com/repos/Shadow671488/lumo/releases/latest', {
-          headers: { 'User-Agent': 'Riff-Player' }
-        });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        const json = await res.json();
-        const latestVersion = (json.tag_name || '').replace(/^v/i, '');
-        fallbackReleaseUrl = json.html_url || 'https://github.com/Shadow671488/lumo/releases/latest';
-        if (isNewerVersion(latestVersion, currentAppVersion)) {
+        let latestVersion = '';
+        let releaseNotes = '';
+        let publishedAt = '';
+        fallbackReleaseUrl = 'https://github.com/Shadow671488/lumo/releases/latest';
+
+        // 1. Check latest.yml directly from GitHub CDN (NO RATE LIMIT)
+        try {
+          const ymlRes = await fetch('https://github.com/Shadow671488/lumo/releases/latest/download/latest.yml', { cache: 'no-cache' });
+          if (ymlRes.ok) {
+            const ymlText = await ymlRes.text();
+            const mVer = ymlText.match(/version:\s*([^\s\r\n]+)/);
+            if (mVer && mVer[1]) latestVersion = mVer[1].replace(/^v/i, '').trim();
+            const mDate = ymlText.match(/releaseDate:\s*['"]?([^'"\r\n]+)['"]?/);
+            if (mDate && mDate[1]) publishedAt = mDate[1].trim();
+          }
+        } catch (_) {}
+
+        // 2. Check GitHub web json endpoint (NO RATE LIMIT)
+        try {
+          const webRes = await fetch('https://github.com/Shadow671488/lumo/releases/latest', {
+            headers: { 'Accept': 'application/json' }
+          });
+          if (webRes.ok) {
+            const webJson = await webRes.json();
+            if (webJson.tag_name && !latestVersion) {
+              latestVersion = webJson.tag_name.replace(/^v/i, '').trim();
+            }
+            if (webJson.body && !releaseNotes) releaseNotes = webJson.body;
+            if (webJson.published_at && !publishedAt) publishedAt = webJson.published_at;
+            if (webJson.update_url) fallbackReleaseUrl = 'https://github.com' + webJson.update_url;
+          }
+        } catch (_) {}
+
+        // 3. Fallback to atom feed (NO RATE LIMIT)
+        if (!latestVersion) {
+          try {
+            const atomRes = await fetch('https://github.com/Shadow671488/lumo/releases.atom');
+            if (atomRes.ok) {
+              const atomXml = await atomRes.text();
+              const m = atomXml.match(/<title>v?([0-9]+\.[0-9]+\.[0-9]+)<\/title>/i);
+              if (m && m[1]) latestVersion = m[1].trim();
+            }
+          } catch (_) {}
+        }
+
+        if (latestVersion && isNewerVersion(latestVersion, currentAppVersion)) {
           latestUpdateInfo = {
             version: latestVersion,
-            releaseNotes: json.body || '',
-            publishedAt: json.published_at || '',
+            releaseNotes: releaseNotes || 'Bug fixes, playback improvements, and UI polish.',
+            publishedAt: publishedAt || '',
             htmlUrl: fallbackReleaseUrl,
-            canInstall: false
+            canInstall: canNativeInstall
           };
           populateOtaUpdateSheet(latestUpdateInfo);
           restoreButton();
@@ -19023,12 +19067,11 @@ function bindCoverHoldZoom(wrapEl) {
 
     if (btn) {
       btn.addEventListener('click', async () => {
-        if (isUpdateDownloaded) {
-          populateOtaUpdateSheet(latestUpdateInfo || { version: "44.0.2" });
+        manualUpdateCheck = true;
+        if (isUpdateDownloaded && latestUpdateInfo) {
+          populateOtaUpdateSheet(latestUpdateInfo);
           return;
         }
-        if (manualUpdateCheck) return;
-        manualUpdateCheck = true;
         btn.disabled = true;
         btn.innerHTML = '<svg class="m3-btn-shape-spinner" style="width:16px;height:16px;margin-right:6px;" viewBox="-180 -180 360 360"><path fill="currentColor"/></svg><span>Checking...</span>';
 
@@ -19041,10 +19084,15 @@ function bindCoverHoldZoom(wrapEl) {
           if (manualUpdateCheck) {
             checkDirectFromRenderer();
           }
-        }, 3000);
+        }, 4000);
 
         try {
           const r = await api.checkForUpdates();
+          if (r && r.downloaded) {
+            if (checkTimeoutId) clearTimeout(checkTimeoutId);
+            restoreButton();
+            return;
+          }
           if (r && r.ok === false) {
             if (checkTimeoutId) clearTimeout(checkTimeoutId);
             checkDirectFromRenderer();
@@ -19058,38 +19106,20 @@ function bindCoverHoldZoom(wrapEl) {
 
     if (api && api.onUpdateAvailable) {
       api.onUpdateAvailable(async (info) => {
-        restoreButton();
         latestUpdateInfo = { ...(info || {}) };
         canNativeInstall = !!info?.canInstall;
-
-        const hasImg = latestUpdateInfo.releaseNotes && /<img/i.test(latestUpdateInfo.releaseNotes);
-        const hasPublishedAt = !!latestUpdateInfo.publishedAt;
-
-        if (!hasImg || !hasPublishedAt) {
-          try {
-            const res = await fetch('https://api.github.com/repos/Shadow671488/lumo/releases/latest', {
-              headers: { 'User-Agent': 'Riff-Player' }
-            });
-            if (res.ok) {
-              const gh = await res.json();
-              if (gh.body) latestUpdateInfo.releaseNotes = gh.body;
-              if (gh.published_at) latestUpdateInfo.publishedAt = gh.published_at;
-              if (gh.html_url) latestUpdateInfo.htmlUrl = gh.html_url;
-              if (gh.tag_name && !latestUpdateInfo.version) latestUpdateInfo.version = gh.tag_name;
-            }
-          } catch (_) {}
-        }
-
         populateOtaUpdateSheet(latestUpdateInfo);
+        restoreButton();
       });
     }
 
     const onDownloaded = (info) => {
-      restoreButton();
       isUpdateDownloaded = true;
-      if (info && !latestUpdateInfo) {
-        latestUpdateInfo = { ...info };
+      if (info) {
+        latestUpdateInfo = { ...(latestUpdateInfo || {}), ...info, canInstall: true };
       }
+      canNativeInstall = true;
+      restoreButton();
       if (isWaitingToRestart) {
         setTimeout(() => {
           if (window.electronAPI && window.electronAPI.installUpdateNow) {
@@ -19161,21 +19191,6 @@ function bindCoverHoldZoom(wrapEl) {
         if (sheet) sheet.classList.add('leaving');
         if (spinnerBox) spinnerBox.classList.remove('hidden');
 
-        if (api && api.runSyncUpstream) {
-          try {
-            const res = await api.runSyncUpstream();
-            if (spinnerBox) spinnerBox.classList.add('hidden');
-            const modal = document.getElementById('update-modal');
-            if (modal) modal.classList.add('hidden');
-            showToastNow(res && res.ok ? 'Update completed! Restart to apply.' : 'Update check completed.', 'success');
-          } catch (_) {
-            if (spinnerBox) spinnerBox.classList.add('hidden');
-            const modal = document.getElementById('update-modal');
-            if (modal) modal.classList.add('hidden');
-          }
-          return;
-        }
-
         if (isUpdateDownloaded) {
           setTimeout(() => {
             if (window.electronAPI && window.electronAPI.installUpdateNow) {
@@ -19183,7 +19198,7 @@ function bindCoverHoldZoom(wrapEl) {
             } else if (window.electronAPI && window.electronAPI.updateAction) {
               window.electronAPI.updateAction('now');
             }
-          }, 900);
+          }, 400);
           return;
         }
 

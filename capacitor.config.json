@@ -2,12 +2,14 @@
   "appId": "com.lumo.player",
   "appName": "Lumo",
   "webDir": "www",
+  "backgroundColor": "#121214",
   "server": {
     "androidScheme": "https",
     "cleartext": true
   },
   "android": {
-    "allowMixedContent": true
+    "allowMixedContent": true,
+    "backgroundColor": "#121214"
   },
   "plugins": {
     "CapacitorHttp": {

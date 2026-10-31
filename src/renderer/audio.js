@@ -483,8 +483,8 @@
     }
 
     setVolume(volume, isMuted) {
-      this.volume = volume;
-      this.isMuted = isMuted;
+      this.volume = Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : 0.85;
+      this.isMuted = !!isMuted;
       this._applyMasterVolume();
     }
 
@@ -531,10 +531,8 @@
     _applyMasterVolume() {
       if (this.fadeGain && this.ctx) {
         try {
-          if (this.fadeGain.gain.value <= 0.01) {
-            this.fadeGain.gain.cancelScheduledValues(this.ctx.currentTime);
-            this.fadeGain.gain.setValueAtTime(1.0, this.ctx.currentTime);
-          }
+          this.fadeGain.gain.cancelScheduledValues(this.ctx.currentTime);
+          this.fadeGain.gain.setValueAtTime(1.0, this.ctx.currentTime);
         } catch (_) {}
       }
       const raw = this.isMuted ? 0 : Math.max(0, Math.min(1, Number.isFinite(this.volume) ? this.volume : 0.85));
@@ -564,7 +562,13 @@
 
 
     fadeOut(durationSec = 0.25) {
-      if (this.masterGain && this.ctx) {
+      if (this.fadeGain && this.ctx) {
+        try {
+          const ct = this.ctx.currentTime;
+          this.fadeGain.gain.cancelScheduledValues(ct);
+          this.fadeGain.gain.setTargetAtTime(0, ct, Math.max(0.02, durationSec * 0.3));
+        } catch (_) {}
+      } else if (this.masterGain && this.ctx) {
         const current = this.masterGain.gain.value;
         this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
         this.masterGain.gain.setValueAtTime(Math.max(0.001, current), this.ctx.currentTime);
@@ -587,13 +591,18 @@
 
     fadeIn(durationSec = 0.2) {
       const rampSec = Math.min(0.2, Math.max(0.05, durationSec));
+      if (this.fadeGain && this.ctx) {
+        try {
+          const ct = this.ctx.currentTime;
+          this.fadeGain.gain.cancelScheduledValues(ct);
+          this.fadeGain.gain.setValueAtTime(0.1, ct);
+          this.fadeGain.gain.linearRampToValueAtTime(1.0, ct + rampSec);
+        } catch (_) {}
+      }
       if (this.masterGain && this.ctx) {
         this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
         const targetVol = (this.isMuted ? 0 : 1) * (Number.isFinite(this.audioSettings.volume) ? this.audioSettings.volume : 1.0);
-        this.masterGain.gain.setValueAtTime(Math.max(0.1, targetVol * 0.3), this.ctx.currentTime);
-        this.masterGain.gain.linearRampToValueAtTime(
-          Math.max(0.001, targetVol), this.ctx.currentTime + rampSec
-        );
+        this.masterGain.gain.setValueAtTime(targetVol, this.ctx.currentTime);
       } else if (this._attachedElement) {
         try {
           const el = this._attachedElement;
@@ -668,7 +677,8 @@
 
     setNormalizeGainDb(db) {
       if (!this.normGain || !this.ctx) return;
-      this.normGain.gain.setTargetAtTime(Math.pow(10, db / 20), this.ctx.currentTime, 0.8);
+      const clampedDb = Math.max(-6, Math.min(6, typeof db === 'number' ? db : 0));
+      this.normGain.gain.setTargetAtTime(Math.pow(10, clampedDb / 20), this.ctx.currentTime, 0.8);
     }
 
 

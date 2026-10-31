@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
@@ -16,6 +17,11 @@ public class MainActivity extends BridgeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         WebView.setWebContentsDebuggingEnabled(true);
+
+        WebView initialWebView = getBridge() != null ? getBridge().getWebView() : null;
+        if (initialWebView != null) {
+            initialWebView.setBackgroundColor(Color.parseColor("#121214"));
+        }
 
         BroadcastReceiver evalReceiver = new BroadcastReceiver() {
             @Override
@@ -55,5 +61,14 @@ public class MainActivity extends BridgeActivity {
                 }
             }
         });
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        WebView webView = getBridge() != null ? getBridge().getWebView() : null;
+        if (webView != null) {
+            webView.setBackgroundColor(Color.parseColor("#121214"));
+        }
     }
 }

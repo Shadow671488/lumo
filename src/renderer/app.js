@@ -740,6 +740,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentTrackContext: null,
     currentTrackIndexInContext: -1,
     isPlaying: false,
+    volume: savedVolume,
     isMuted: localStorage.getItem('lumo_muted') === '1',
     isShuffle: false,
     isRepeat: false,
@@ -922,6 +923,58 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     } catch (_) {}
 
+    // 2b. High-speed Fallback: Deezer API (No API key required, HD album covers, accurate track and artist names)
+    try {
+      const dzTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000));
+      const dzFetch = fetch('https://api.deezer.com/search?q=' + cleanQ + '&limit=' + limit);
+      const dzResp = await Promise.race([dzFetch, dzTimeout]);
+      if (dzResp && dzResp.ok) {
+        const dzData = await dzResp.json();
+        const dzResults = Array.isArray(dzData.data) ? dzData.data : [];
+        if (dzResults.length > 0) {
+          const tracks = dzResults.map(item => ({
+            id: 'dz_' + item.id,
+            title: item.title || 'Unknown Title',
+            artist: item.artist?.name || 'Unknown Artist',
+            album: item.album?.title || '',
+            duration: item.duration || 180,
+            thumbnail: item.album?.cover_medium || item.album?.cover_big || item.artist?.picture_medium || '',
+            previewUrl: item.preview || '',
+            platform: 'deezer'
+          }));
+          return { success: true, tracks };
+        }
+      }
+    } catch (_) {}
+
+    // 2c. High-speed Fallback: SoundCloud Direct API (Full hyperpop/underground coverage)
+    try {
+      const scTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error('Timeout')), 3000));
+      const scCid = 'OGA0P5R5U4CpyooNe9OUcnjIMxao2hB2';
+      const scFetch = fetch('https://api-v2.soundcloud.com/search/tracks?q=' + cleanQ + '&limit=' + limit + '&client_id=' + scCid);
+      const scResp = await Promise.race([scFetch, scTimeout]);
+      if (scResp && scResp.ok) {
+        const scData = await scResp.json();
+        const scCollection = Array.isArray(scData.collection) ? scData.collection : [];
+        if (scCollection.length > 0) {
+          const tracks = scCollection.filter(t => t && (t.title || t.id)).map(item => {
+            const rawThumb = item.artwork_url || item.user?.avatar_url || '';
+            const hdThumb = rawThumb.replace('-large', '-t500x500');
+            return {
+              id: String(item.id || Math.random().toString(36).substring(2)),
+              title: item.title || 'Unknown Title',
+              artist: item.user?.username || 'Unknown Artist',
+              duration: Math.round((item.duration || 180000) / 1000),
+              thumbnail: hdThumb,
+              url: item.permalink_url || '',
+              platform: 'soundcloud'
+            };
+          });
+          if (tracks.length > 0) return { success: true, tracks };
+        }
+      }
+    } catch (_) {}
+
     // 3. Fallback mobile search provider: Invidious YouTube tracks
     const invidiousInstances = ['https://yt.chocolatemoo53.com'];
     for (const base of invidiousInstances) {
@@ -992,34 +1045,24 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
     }
 
-    // 2. High-speed Fallback: iTunes preview stream matching track title + artist
-    try {
-      const queryStr = ((track?.artist ? track.artist + ' ' : '') + (track?.title || '')).trim();
-      if (queryStr) {
-        const itController = new AbortController();
-        const itTimeout = setTimeout(() => itController.abort(), 3500);
-        const itRes = await fetch('https://itunes.apple.com/search?term=' + encodeURIComponent(queryStr) + '&entity=song&limit=1', { signal: itController.signal });
-        clearTimeout(itTimeout);
-        if (itRes.ok) {
-          const itData = await itRes.json();
-          if (itData?.results?.[0]?.previewUrl) {
-            return { success: true, streamUrl: itData.results[0].previewUrl };
+    // Only allow preview clips if track duration is short (<=35s) or explicitly requested
+    if (isMobileEnvironment() && track && track.duration && track.duration <= 35) {
+      try {
+        const queryStr = ((track?.artist ? track.artist + ' ' : '') + (track?.title || '')).trim();
+        if (queryStr) {
+          const itController = new AbortController();
+          const itTimeout = setTimeout(() => itController.abort(), 3500);
+          const itRes = await fetch('https://itunes.apple.com/search?term=' + encodeURIComponent(queryStr) + '&entity=song&limit=1', { signal: itController.signal });
+          clearTimeout(itTimeout);
+          if (itRes.ok) {
+            const itData = await itRes.json();
+            if (itData?.results?.[0]?.previewUrl) {
+              return { success: true, streamUrl: itData.results[0].previewUrl, isSnippetPreview: true };
+            }
           }
         }
-
-        // 3. Fallback: Deezer preview stream
-        const dzController = new AbortController();
-        const dzTimeout = setTimeout(() => dzController.abort(), 3500);
-        const dzRes = await fetch('https://api.deezer.com/search?q=' + encodeURIComponent(queryStr) + '&limit=1', { signal: dzController.signal });
-        clearTimeout(dzTimeout);
-        if (dzRes.ok) {
-          const dzData = await dzRes.json();
-          if (dzData?.data?.[0]?.preview) {
-            return { success: true, streamUrl: dzData.data[0].preview };
-          }
-        }
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
 
     return { success: false, error: 'Could not resolve audio stream' };
   }
@@ -3480,6 +3523,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     if (el.sliderGain) el.sliderGain.value = Math.round(s.volume * 100);
     if (el.valGain) el.valGain.textContent = `${Math.round(s.volume * 100)}%`;
+    if (el.volumeSlider) el.volumeSlider.value = String(Number.isFinite(state.volume) ? state.volume : 0.85);
 
     if (el.sliderEcho) el.sliderEcho.value = s.echo;
     if (el.valEcho) el.valEcho.textContent = `${s.echo}%`;
@@ -4138,6 +4182,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     // A new track must start from 0, never from the position where the
     // previous track was paused (playSmooth restores this value).
     frozenCurTime = 0;
+    state.isTrackLoading = true;
+    state._pausedTrackId = null;
 
     if (el.trackLoadingOverlay) {
       if (el.trackLoadingTitle) el.trackLoadingTitle.textContent = track.title || 'loading track...';
@@ -4273,7 +4319,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (serverBase) {
         try {
           const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 2500);
+          const timeoutId = setTimeout(() => controller.abort(), 9000);
           const streamInfoUrl = `${serverBase}/api/stream-info?url=${encodeURIComponent(resolvedUrl || '')}&id=${encodeURIComponent(resolvedId || '')}&platform=${streamPlatform}&title=${encodeURIComponent(track.title || '')}&artist=${encodeURIComponent(track.artist || '')}&duration=${encodeURIComponent(track.duration || 0)}&thumbnail=${encodeURIComponent(track.thumbnail || '')}`;
           const res = await fetch(streamInfoUrl, { signal: controller.signal });
           clearTimeout(timeoutId);
@@ -4294,7 +4340,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       // Some SoundCloud tracks are no longer streamable from SoundCloud (for
       // example, DRM-restricted uploads). Try the same track on YouTube before
       // giving up so imported playlists do not stay stuck on the loading state.
-      if ((!data || !data.success || !data.streamUrl) && streamPlatform === 'soundcloud' && navigator.onLine) {
+      const isSnippetPreview = data && data.success && data.duration && data.duration <= 35 && track.duration > 45;
+      if ((!data || !data.success || !data.streamUrl || isSnippetPreview) && streamPlatform === 'soundcloud' && navigator.onLine) {
         showToast('Resolving stream for playback...', 'info');
         const fallbackQuery = ((track.artist ? track.artist + ' - ' : '') + (track.title || '')).trim();
         if (fallbackQuery) {
@@ -7451,6 +7498,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const curToken = ++smoothFadeToken;
     isPauseFading = true;
     frozenCurTime = (el.nativeAudio && Number.isFinite(el.nativeAudio.currentTime)) ? el.nativeAudio.currentTime : 0;
+    state._pausedTrackId = state.currentTrack ? (state.currentTrack.id || state.currentTrack.url || 'current') : null;
     state.isPlaying = false;
     document.body.classList.remove('is-playing');
     setPlayPauseState(false, true);
@@ -7534,10 +7582,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (_) {}
     }
 
-    if (state.isTrackLoading) {
-      frozenCurTime = 0;
-      state.isTrackLoading = false;
-    }
+    const isResumingPausedTrack = !state.isTrackLoading && state._pausedTrackId && state.currentTrack && (state.currentTrack.id || state.currentTrack.url || 'current') === state._pausedTrackId;
+    state.isTrackLoading = false;
+    state._pausedTrackId = null;
     if (audioEngine && audioEngine.masterGain && audioEngine.ctx) {
       try {
         const ct = audioEngine.ctx.currentTime;
@@ -7547,6 +7594,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (_) {}
     }
     if (el.nativeAudio) {
+      if (!isResumingPausedTrack) {
+        frozenCurTime = 0;
+      }
       if (frozenCurTime > 0 && el.nativeAudio.currentTime === 0 && Number.isFinite(frozenCurTime)) {
         try {
           el.nativeAudio.currentTime = frozenCurTime;
@@ -7900,6 +7950,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     el.nativeAudio.addEventListener('loadedmetadata', () => {
       state.audioDurationStale = false;
+      if (state.isTrackLoading) {
+        try { el.nativeAudio.currentTime = 0; } catch (_) {}
+      }
       try {
         const tr = getTrackTrim(state.currentTrack);
         if (tr && Number.isFinite(tr.end) && tr.end > (tr.start || 0) + 1.5 && el.nativeAudio.currentTime < tr.start) {
@@ -8006,6 +8059,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       } else {
         const expectedDur = getReliableTrackDuration();
         const pos = (el.nativeAudio && Number.isFinite(el.nativeAudio.currentTime)) ? el.nativeAudio.currentTime : 0;
+        if (state.currentTrack && expectedDur > 40 && pos > 2 && pos <= 35 && (state._streamRecoverCount || 0) >= 1) {
+          console.warn('[Playback] Stream was truncated at ' + pos.toFixed(1) + 's / ' + expectedDur.toFixed(1) + 's. Refetching full stream...');
+          playTrack(state.currentTrack, state.queue, state.queueIndex, state.currentTrackContext);
+          return;
+        }
         if (state.currentTrack && expectedDur > 25 && pos > 2 && pos < expectedDur - 12 && (state._streamRecoverCount || 0) < 3) {
           state._streamRecoverCount = (state._streamRecoverCount || 0) + 1;
           console.warn('[Playback] Premature stream end detected at ' + pos.toFixed(1) + 's / ' + expectedDur.toFixed(1) + 's (recovery ' + state._streamRecoverCount + ')');
@@ -8072,9 +8130,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       state.isSeekingAudio = false;
       state.seekingTargetTime = undefined;
       state.seekingProgress = undefined;
-      // Keep the paused resume position in sync with manual seeks. Otherwise
-      // playSmooth() can restore the position captured when pause was pressed.
-      if (!state.isTrackLoading && !state.isPlaying && Number.isFinite(el.nativeAudio.currentTime)) {
+      if (state.isTrackLoading) {
+        frozenCurTime = 0;
+        return;
+      }
+      // Keep the paused resume position in sync with manual seeks for the active track
+      if (!state.isPlaying && state._pausedTrackId && state.currentTrack && (state.currentTrack.id || state.currentTrack.url || 'current') === state._pausedTrackId && Number.isFinite(el.nativeAudio.currentTime)) {
         frozenCurTime = el.nativeAudio.currentTime;
       }
       updateMediaPositionState();
@@ -17574,7 +17635,8 @@ function bindCoverHoldZoom(wrapEl) {
         const max = input.max === '' ? 100 : parseFloat(input.max);
         const rawRatio = max > min ? (parseFloat(input.value) - min) / (max - min) : 0;
         if (input.id === 'volume-slider') {
-          const v = (!state.isMuted && rawRatio > 0) ? (0.06 + rawRatio * 0.94) : 0;
+          const safeRatio = (Number.isFinite(rawRatio) && rawRatio >= 0) ? Math.min(1, rawRatio) : (Number.isFinite(state.volume) ? state.volume : 0.85);
+          const v = (!state.isMuted && safeRatio > 0) ? (0.06 + safeRatio * 0.94) : 0;
           wrap.style.setProperty('--v', v);
         } else {
           wrap.style.setProperty('--v', rawRatio);
@@ -18139,6 +18201,13 @@ function bindCoverHoldZoom(wrapEl) {
     try { localStorage.setItem('lumo_settings_cat', cat); } catch (e) {}
     if (cat === 'custom-themes' && typeof renderThemeCards === 'function') renderThemeCards();
     if (cat === 'plugins' && typeof reloadPluginsList === 'function') reloadPluginsList();
+    if (cat === 'advanced') {
+      const btnToggleAdv = document.getElementById('btn-toggle-adv-section');
+      const advWrapper = document.getElementById('adv-collapsible-wrapper');
+      if (advWrapper) advWrapper.classList.add('is-open');
+      if (btnToggleAdv) btnToggleAdv.classList.add('is-open');
+      try { localStorage.setItem('lumo_adv_open', 'true'); } catch (_) {}
+    }
     refreshStacks();
   }
   window.showSettingsCategory = showSettingsCategory;

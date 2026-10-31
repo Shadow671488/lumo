@@ -547,6 +547,7 @@ async function refreshServerScClientId() {
 
 async function resolveScTranscodingServer(trackObj, cid) {
   if (!trackObj || !trackObj.media || !Array.isArray(trackObj.media.transcodings)) return null;
+  if (trackObj.policy === 'SNIP' || (trackObj.full_duration && trackObj.duration && trackObj.full_duration > 35000 && trackObj.duration <= 35000)) return null;
   const list = trackObj.media.transcodings;
   const playable = list.filter(t => t && t.format && t.url &&
     ['progressive', 'hls'].includes(t.format.protocol) &&
@@ -602,7 +603,7 @@ async function fetchDirectSoundCloudStreamServer(scUrlOrId, queryFallback) {
         if (sr.ok) {
           const sj = await sr.json();
           const col = (sj && Array.isArray(sj.collection)) ? sj.collection : [];
-          const pick = col.find(t => t.policy !== 'SNIP' && t.duration > 30000) || col[0];
+          const pick = col.find(t => t.policy !== 'SNIP' && t.duration > 35000);
           if (pick) {
             const u = await resolveScTranscodingServer(pick, cid);
             if (u) return u;
@@ -2465,13 +2466,14 @@ async function handleStreamInfo(req, res, trackUrl, trackId, platform = 'youtube
 
     if (!streamUrl && (title || artist)) {
       const q = (artist && title) ? (artist + " - " + title) : (title || artist);
-      const fbSpec = isSc ? ("scsearch1:" + q) : ("ytsearch1:" + q + " audio");
+      const isSearchSc = isSc && !trackUrl;
+      const fbSpec = isSearchSc ? ("scsearch1:" + q) : ("ytsearch1:" + q + " audio");
       try {
         const fbArgs = [
           "--no-config", "-g", "--no-warnings", "--no-playlist", "--no-check-certificates", "--prefer-free-formats",
           "--socket-timeout", "5", "--retries", "1",
-          ...(!isSc ? ["--extractor-args", "youtube:player_client=android"] : []),
-          "-f", audioFormat,
+          ...(!isSearchSc ? ["--extractor-args", "youtube:player_client=android"] : []),
+          "-f", (isSearchSc ? audioFormat : "bestaudio/best/18"),
           fbSpec
         ];
         const fbRaw = await executeYtDlp(fbArgs, 7000);
@@ -2487,6 +2489,27 @@ async function handleStreamInfo(req, res, trackUrl, trackId, platform = 'youtube
     if (!streamUrl) {
       const q = ((artist ? artist + ' - ' : '') + (title || '')).trim();
       streamUrl = await fetchDirectSoundCloudStreamServer(isSc ? (trackUrl || cleanId) : '', q);
+    }
+
+    if (!streamUrl && (title || artist)) {
+      const q = (artist && title) ? (artist + ' - ' + title) : (title || artist);
+      for (const ytClient of ['android', 'web_safari', 'tv']) {
+        try {
+          const ytArgs = [
+            '--no-config', '-g', '--no-warnings', '--no-playlist', '--no-check-certificates', '--prefer-free-formats',
+            '--socket-timeout', '5', '--retries', '1',
+            ...(ytClient ? ['--extractor-args', `youtube:player_client=${ytClient}`] : []),
+            '-f', 'bestaudio/best/18',
+            `ytsearch1:${q} audio`
+          ];
+          const ytRaw = await executeYtDlp(ytArgs, 7000);
+          const lines = ytRaw.trim().split(String.fromCharCode(10)).map(l => l.trim()).filter(l => l.startsWith('http'));
+          if (lines.length > 0) {
+            streamUrl = lines[0];
+            break;
+          }
+        } catch (_) {}
+      }
     }
 
     if (forShare && (!streamUrl || streamUrl.includes('.m3u8')) && (title || artist)) {

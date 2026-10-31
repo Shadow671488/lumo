@@ -24801,6 +24801,77 @@ function bindCoverHoldZoom(wrapEl) {
     return card;
   }
 
+  function getStarterCuratedTracks() {
+    return [
+      {
+        id: 'starter_1',
+        title: 'Blinding Lights',
+        artist: 'The Weeknd',
+        thumbnail: 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/4a/6e/d6/4a6ed687-3536-f633-e578-8d4847e0a811/19UMGIM86278.rgb.jpg/600x600bb.jpg',
+        cover: 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/4a/6e/d6/4a6ed687-3536-f633-e578-8d4847e0a811/19UMGIM86278.rgb.jpg/600x600bb.jpg',
+        streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/73/a3/9f/73a39f6f-2b0e-b8ce-ffb6-96ad6fc00c62/mzaf_10586940801869828456.plus.aac.p.m4a',
+        previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/73/a3/9f/73a39f6f-2b0e-b8ce-ffb6-96ad6fc00c62/mzaf_10586940801869828456.plus.aac.p.m4a',
+        duration: 200,
+        platform: 'itunes'
+      },
+      {
+        id: 'starter_2',
+        title: 'Starboy',
+        artist: 'The Weeknd ft. Daft Punk',
+        thumbnail: 'https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/bf/16/e2/bf16e25c-0cfc-e836-e63b-6385d2633cb1/16UMGIM56641.rgb.jpg/600x600bb.jpg',
+        cover: 'https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/bf/16/e2/bf16e25c-0cfc-e836-e63b-6385d2633cb1/16UMGIM56641.rgb.jpg/600x600bb.jpg',
+        streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/cd/66/c7/cd66c7a4-e918-a83a-d68a-cf8e2c040d6b/mzaf_10793617182283995818.plus.aac.p.m4a',
+        previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/cd/66/c7/cd66c7a4-e918-a83a-d68a-cf8e2c040d6b/mzaf_10793617182283995818.plus.aac.p.m4a',
+        duration: 230,
+        platform: 'itunes'
+      },
+      {
+        id: 'starter_3',
+        title: 'Save Your Tears',
+        artist: 'The Weeknd',
+        thumbnail: 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/4a/6e/d6/4a6ed687-3536-f633-e578-8d4847e0a811/19UMGIM86278.rgb.jpg/600x600bb.jpg',
+        cover: 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/4a/6e/d6/4a6ed687-3536-f633-e578-8d4847e0a811/19UMGIM86278.rgb.jpg/600x600bb.jpg',
+        streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/5a/88/54/5a885474-0f2b-98ee-125d-4f14ad313b10/mzaf_15091702484050772714.plus.aac.p.m4a',
+        previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/5a/88/54/5a885474-0f2b-98ee-125d-4f14ad313b10/mzaf_15091702484050772714.plus.aac.p.m4a',
+        duration: 215,
+        platform: 'itunes'
+      },
+      {
+        id: 'starter_4',
+        title: 'As It Was',
+        artist: 'Harry Styles',
+        thumbnail: 'https://is1-ssl.mzstatic.com/image/thumb/Music122/v4/74/ad/e5/74ade5c5-e5f8-b391-7663-d1fc7dc9b1a0/886449999088.jpg/600x600bb.jpg',
+        cover: 'https://is1-ssl.mzstatic.com/image/thumb/Music122/v4/74/ad/e5/74ade5c5-e5f8-b391-7663-d1fc7dc9b1a0/886449999088.jpg/600x600bb.jpg',
+        streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview122/v4/4e/d8/bc/4ed8bc98-b80c-03ca-4f5a-c5ee69a47895/mzaf_6380963162744358661.plus.aac.p.m4a',
+        previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview122/v4/4e/d8/bc/4ed8bc98-b80c-03ca-4f5a-c5ee69a47895/mzaf_6380963162744358661.plus.aac.p.m4a',
+        duration: 167,
+        platform: 'itunes'
+      },
+      {
+        id: 'starter_5',
+        title: 'Levitating',
+        artist: 'Dua Lipa',
+        thumbnail: 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/d5/43/45/d5434557-0b1a-8533-31be-4978be05c56c/190295286106.jpg/600x600bb.jpg',
+        cover: 'https://is1-ssl.mzstatic.com/image/thumb/Music115/v4/d5/43/45/d5434557-0b1a-8533-31be-4978be05c56c/190295286106.jpg/600x600bb.jpg',
+        streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/0f/52/6a/0f526af7-bc3f-7e9b-0dc2-6be4e3f42654/mzaf_11304245995222533036.plus.aac.p.m4a',
+        previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview125/v4/0f/52/6a/0f526af7-bc3f-7e9b-0dc2-6be4e3f42654/mzaf_11304245995222533036.plus.aac.p.m4a',
+        duration: 203,
+        platform: 'itunes'
+      },
+      {
+        id: 'starter_6',
+        title: 'Stay',
+        artist: 'The Kid LAROI & Justin Bieber',
+        thumbnail: 'https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/c3/09/b8/c309b8c0-2f16-0e06-9b57-69b552fa74ef/886449487967.jpg/600x600bb.jpg',
+        cover: 'https://is1-ssl.mzstatic.com/image/thumb/Music125/v4/c3/09/b8/c309b8c0-2f16-0e06-9b57-69b552fa74ef/886449487967.jpg/600x600bb.jpg',
+        streamUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/33/c4/62/33c462e0-f04b-37bf-20bc-e00f5c2e99f6/mzaf_15682855217822998782.plus.aac.p.m4a',
+        previewUrl: 'https://audio-ssl.itunes.apple.com/itunes-assets/AudioPreview115/v4/33/c4/62/33c462e0-f04b-37bf-20bc-e00f5c2e99f6/mzaf_15682855217822998782.plus.aac.p.m4a',
+        duration: 141,
+        platform: 'itunes'
+      }
+    ];
+  }
+
   async function renderTrending() {
     const sec = document.getElementById('sp-trend-sec');
     const row = document.getElementById('sp-trend');

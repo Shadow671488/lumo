@@ -112,6 +112,25 @@
     init(audioElement) {
       if (!audioElement) return;
 
+      const isMobileEnv = !!(
+        (typeof window !== 'undefined' && (window.isMobile || window.isCapacitorApp)) ||
+        (global.Capacitor && global.Capacitor.isNativePlatform && global.Capacitor.isNativePlatform()) ||
+        (typeof document !== 'undefined' && document.body && document.body.classList.contains('is-mobile')) ||
+        (typeof navigator !== 'undefined' && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent))
+      );
+
+      this._attachedElement = audioElement;
+
+      if (isMobileEnv) {
+        this.graphInitialized = false;
+        try {
+          audioElement.removeAttribute('crossorigin');
+          audioElement.crossOrigin = null;
+        } catch (_) {}
+        this._applyMasterVolume();
+        return;
+      }
+
       if (this.ctx) {
         if (!audioElement.paused && this.ctx.state === 'suspended') {
           this.ctx.resume().catch(() => {});
@@ -533,6 +552,7 @@
     }
 
     isModified() {
+      if (!this.graphInitialized) return false;
       const s = this.audioSettings;
       const eqMod = s.eq ? (s.eq.low !== 0 || s.eq.mid !== 0 || s.eq.high !== 0) : false;
       const eqBandsMod = Array.isArray(s.eqBands) ? s.eqBands.some(v => v !== 0) : false;
@@ -547,6 +567,19 @@
         this.masterGain.gain.cancelScheduledValues(this.ctx.currentTime);
         this.masterGain.gain.setValueAtTime(Math.max(0.001, current), this.ctx.currentTime);
         this.masterGain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + durationSec);
+      } else if (this._attachedElement) {
+        try {
+          const el = this._attachedElement;
+          const startVol = el.volume;
+          const steps = 10;
+          const stepTime = (durationSec * 1000) / steps;
+          let currentStep = 0;
+          const interval = setInterval(() => {
+            currentStep++;
+            el.volume = Math.max(0, startVol * (1 - currentStep / steps));
+            if (currentStep >= steps) clearInterval(interval);
+          }, stepTime);
+        } catch (_) {}
       }
     }
 
@@ -558,6 +591,20 @@
         this.masterGain.gain.exponentialRampToValueAtTime(
           Math.max(0.001, targetVol), this.ctx.currentTime + durationSec
         );
+      } else if (this._attachedElement) {
+        try {
+          const el = this._attachedElement;
+          const targetVol = this.appliedElementVolume || (this.isMuted ? 0 : 0.85);
+          el.volume = 0;
+          const steps = 10;
+          const stepTime = (durationSec * 1000) / steps;
+          let currentStep = 0;
+          const interval = setInterval(() => {
+            currentStep++;
+            el.volume = Math.min(targetVol, targetVol * (currentStep / steps));
+            if (currentStep >= steps) clearInterval(interval);
+          }, stepTime);
+        } catch (_) {}
       }
     }
 

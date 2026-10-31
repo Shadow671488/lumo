@@ -7512,7 +7512,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       try {
         const playPromise = el.nativeAudio.play();
         if (playPromise && typeof playPromise.catch === 'function') {
-          playPromise.catch(e => console.warn('Play error:', e));
+          playPromise.catch(e => console.warn('Play error:', e ? (e.name + ': ' + e.message) : e));
         }
       } catch (e) {
         console.warn('Play error:', e);
@@ -11182,7 +11182,7 @@ function renderClickableArtists(container, rawArtist) {
       res = res.replace(/[?&]$/, '');
     }
     if (/(?:i\.ytimg\.com|img\.youtube\.com)\/(?:vi|vi_webp)\/([^/?#]+)\/(?:hqdefault|mqdefault|default|sddefault)\.(jpg|webp)/i.test(res)) {
-      res = res.replace(/\/(?:vi|vi_webp)\/([^/?#]+)\/(?:hqdefault|mqdefault|default|sddefault)\.(jpg|webp)/i, '/vi/$1/maxresdefault.jpg');
+      res = res.replace(/(https?:\/\/(?:i\.ytimg\.com|img\.youtube\.com))\/(?:vi|vi_webp)\/([^/?#]+)\/(?:hqdefault|mqdefault|default|sddefault)\.(jpg|webp)/i, '$1/vi/$2/hqdefault.jpg');
     }
     res = res
       .replace(new RegExp('\\/(\\d{2,4})x(\\d{2,4})(bb|cc|sr)?\\.(jpg|png|webp)', 'i'), '/1200x1200bb.$4')
@@ -24898,9 +24898,13 @@ function bindCoverHoldZoom(wrapEl) {
       `;
     }
 
+    let loadedFromLocal = false;
     try {
       const port = state.serverPort || 38472;
-      const res = await fetch(`http://127.0.0.1:${port}/api/trending`);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 1800);
+      const res = await fetch(`http://127.0.0.1:${port}/api/trending`, { signal: controller.signal });
+      clearTimeout(timeoutId);
       const data = await res.json();
       if (data && data.success && Array.isArray(data.tracks) && data.tracks.length > 0) {
         try {
@@ -24908,13 +24912,55 @@ function bindCoverHoldZoom(wrapEl) {
         } catch (_) {}
         renderTrendingCards(row, data.tracks);
         sec.hidden = false;
-      } else if (!hasCachedTracks) {
-        sec.hidden = true;
+        loadedFromLocal = true;
       }
-    } catch (_) {
-      if (!hasCachedTracks) {
-        sec.hidden = true;
-      }
+    } catch (_) {}
+
+    if (!loadedFromLocal) {
+      try {
+        const itController = new AbortController();
+        const itTimeout = setTimeout(() => itController.abort(), 4000);
+        const itRes = await fetch('https://itunes.apple.com/us/rss/topsongs/limit=30/json', { signal: itController.signal });
+        clearTimeout(itTimeout);
+        if (itRes.ok) {
+          const itData = await itRes.json();
+          const entries = itData?.feed?.entry || [];
+          if (Array.isArray(entries) && entries.length > 0) {
+            const publicTracks = entries.map(entry => {
+              const audioLink = entry.link?.find(l => l.attributes?.type === 'audio/x-m4a' || l.attributes?.rel === 'enclosure');
+              const streamUrl = audioLink?.attributes?.href || '';
+              const rawImg = entry['im:image']?.[2]?.label || entry['im:image']?.[1]?.label || '';
+              const cover = rawImg.replace(/\/\d+x\d+bb\./, '/600x600bb.');
+              const trackId = entry.id?.attributes?.['im:id'] || Math.random().toString(36).slice(2);
+              return {
+                id: 'itunes_' + trackId,
+                title: entry['im:name']?.label || 'Trending Hit',
+                artist: entry['im:artist']?.label || 'Popular Artist',
+                album: entry['im:collection']?.['im:name']?.label || '',
+                duration: 180,
+                thumbnail: cover,
+                cover: cover,
+                streamUrl: streamUrl,
+                previewUrl: streamUrl,
+                platform: 'itunes'
+              };
+            });
+            try {
+              localStorage.setItem('lumo_trending_cache', JSON.stringify({ ts: Date.now(), tracks: publicTracks }));
+            } catch (_) {}
+            renderTrendingCards(row, publicTracks);
+            sec.hidden = false;
+            hasCachedTracks = true;
+            if (typeof renderQuickAccess === 'function') renderQuickAccess();
+            if (typeof renderMadeForYou === 'function') renderMadeForYou();
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (!hasCachedTracks) {
+      renderTrendingCards(row, getStarterCuratedTracks());
+      sec.hidden = false;
     }
   }
 
@@ -25120,9 +25166,29 @@ function bindCoverHoldZoom(wrapEl) {
       }, 3000);
     }
 
-    if (!hasWave && mixes.length === 0 && !state.mixesBusy) {
-      sec.hidden = true;
-      return;
+    if (mixes.length === 0) {
+      const trCache = safeJson('lumo_trending_cache', null);
+      const allTr = (trCache && Array.isArray(trCache.tracks) && trCache.tracks.length > 0) ? trCache.tracks : getStarterCuratedTracks();
+      mixes = [
+        {
+          id: 'starter_mix_1',
+          title: 'Daily Mix 1',
+          artists: ['The Weeknd', 'Daft Punk', 'Top Hits'],
+          tracks: allTr.slice(0, 5)
+        },
+        {
+          id: 'starter_mix_2',
+          title: 'Daily Mix 2',
+          artists: ['Hip-Hop & Beats', 'Trending Now'],
+          tracks: allTr.slice(1, 6)
+        },
+        {
+          id: 'starter_mix_3',
+          title: 'Daily Mix 3',
+          artists: ['Chill Vibes', 'Acoustic & R&B'],
+          tracks: allTr.slice(2, 7)
+        }
+      ];
     }
 
     sec.hidden = false;
@@ -25246,10 +25312,22 @@ function bindCoverHoldZoom(wrapEl) {
       sec.style.display = 'none';
       return;
     }
-    const artists = getFavoriteArtistsList();
-    if (!artists || artists.length === 0) {
-      sec.style.display = 'none';
-      return;
+    let artists = getFavoriteArtistsList();
+    const isShowingPopular = (!artists || artists.length === 0);
+    const secTitle = sec.querySelector('.sp-section-title') || sec.querySelector('h2');
+    if (isShowingPopular) {
+      if (secTitle) secTitle.textContent = 'Popular Artists';
+      artists = [
+        { name: 'The Weeknd', avatar: 'https://i.scdn.co/image/ab6761610000e5ebbba74d8174549f3e46c750b3' },
+        { name: 'Drake', avatar: 'https://i.scdn.co/image/ab6761610000e5eb4293385d324db8558179afd9' },
+        { name: 'Taylor Swift', avatar: 'https://i.scdn.co/image/ab6761610000e5ebe672b5f553298dcdccb0e676' },
+        { name: 'Billie Eilish', avatar: 'https://i.scdn.co/image/ab6761610000e5eb7974eb441b14a2b97fe31534' },
+        { name: 'Travis Scott', avatar: 'https://i.scdn.co/image/ab6761610000e5ebe74288b5ec20f5b47a9ec49b' },
+        { name: 'Eminem', avatar: 'https://i.scdn.co/image/ab6761610000e5eba00b11c129b27a88fc72f36b' },
+        { name: 'Ariana Grande', avatar: 'https://i.scdn.co/image/ab6761610000e5ebcdce7620dc940db07077278d' }
+      ];
+    } else {
+      if (secTitle) secTitle.textContent = 'Favorite Artists';
     }
     sec.style.display = '';
     container.innerHTML = '';

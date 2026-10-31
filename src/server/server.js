@@ -1,5 +1,12 @@
 const http = require('http');
 const https = require('https');
+const keepAliveHttpsAgent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 30000,
+  maxSockets: 32,
+  maxFreeSockets: 10,
+  family: 4
+});
 const url = require('url');
 const fs = require('fs');
 const path = require('path');
@@ -7161,6 +7168,123 @@ function startServer(port = PORT) {
   });
 }
 
+
+function decodeUtf8Chunks(chunks) {
+  return Buffer.concat(chunks).toString('utf8');
+}
+function hasBrokenLyricText(text) {
+  return typeof text === 'string' && text.includes('\uFFFD');
+}
+function cleanSearchResults(tracks, query) {
+  const queryTokens = String(query || '').toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter(token => token.length > 1);
+  const minimumRelevance = queryTokens.length > 1 ? Math.max(2, Math.ceil(queryTokens.length / 2)) : queryTokens.length;
+  const seenIds = new Set();
+  const seenTracks = new Set();
+  return (Array.isArray(tracks) ? tracks : [])
+    .map((track, index) => {
+      const clean = normalizeTrack(track);
+      if (!clean) return null;
+      if (/\b\d+\s*(?:hours?|hrs?)\b/i.test(clean.title) ||
+          /\b(?:tiktok|nightcore)\s+audios?\b/i.test(clean.title) ||
+          /\b(?:playlist|compilation)\s+of\b/i.test(clean.title)) return null;
+      const text = `${clean.title} ${clean.artist}`.toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+        .split(/\s+/)
+        .filter(Boolean);
+      const words = new Set(text);
+      const titleWords = new Set(clean.title.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean));
+      const artistWords = new Set(clean.artist.toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean));
+      const relevance = queryTokens.reduce((score, token) => score + (words.has(token) ? 1 : 0), 0);
+      const titleRelevance = queryTokens.reduce((score, token) => score + (titleWords.has(token) ? 1 : 0), 0);
+      const artistRelevance = queryTokens.reduce((score, token) => score + (artistWords.has(token) ? 1 : 0), 0);
+      return { track, index, clean, relevance, titleRelevance, artistRelevance };
+    })
+    .filter(item => item && (!queryTokens.length ||
+      (item.relevance >= minimumRelevance &&
+        (queryTokens.length < 2 ||
+          (item.titleRelevance > 0 && item.artistRelevance > 0) ||
+          item.titleRelevance === queryTokens.length ||
+          item.artistRelevance === queryTokens.length))))
+    .sort((a, b) => b.relevance - a.relevance || a.index - b.index)
+    .filter(({ track, clean }) => {
+      const idKey = clean.id ? `${clean.platform}:${clean.id}` : '';
+      const fingerprint = trackFingerprint(track);
+      if (idKey && seenIds.has(idKey)) return false;
+      if (fingerprint && seenTracks.has(fingerprint)) return false;
+      if (idKey) seenIds.add(idKey);
+      if (fingerprint) seenTracks.add(fingerprint);
+      return true;
+    })
+    .map(item => item.track);
+}
+function scoreImportedCandidate(targetTitle, targetArtist, targetDur, cand) {
+  if (!cand || !cand.title) return -999;
+  const norm = (s) => String(s || '').toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const tTitle = norm(targetTitle);
+  const cTitle = norm(cand.title);
+  const tArtist = norm(targetArtist.split(/[,;&\/]|feat\.?|ft\.?/i)[0] || targetArtist);
+  const cArtist = norm(cand.artist);
+  const cFull = `${cArtist} ${cTitle}`;
+
+  if (!tTitle || !cTitle) return -999;
+
+  let score = 0;
+  if (cTitle === tTitle) score += 55;
+  else if (cTitle.includes(tTitle) || tTitle.includes(cTitle)) score += 35;
+  else {
+    const tWords = tTitle.split(' ').filter(w => w.length > 1);
+    if (tWords.length > 0) {
+      const hits = tWords.filter(w => cTitle.includes(w)).length;
+      const ratio = hits / tWords.length;
+      if (ratio < 0.45) return -500;
+      score += ratio * 28;
+    }
+  }
+
+  if (tArtist && tArtist !== 'unknown artist') {
+    if (cArtist === tArtist || cArtist.includes(tArtist) || tArtist.includes(cArtist)) {
+      score += 45;
+    } else if (cFull.includes(tArtist)) {
+      score += 32;
+    } else {
+      score -= 35;
+    }
+  }
+
+  const modifiers = ['slowed', 'reverb', 'sped up', 'speed up', 'nightcore', 'hardstyle', 'remix', 'bootleg', 'mashup', '8d', 'karaoke', 'instrumental', 'cover', 'live', 'tribute', 'bass boosted', 'phonk remix', 'edit'];
+  for (const mod of modifiers) {
+    const inTarget = tTitle.includes(mod) || norm(targetArtist).includes(mod);
+    const inCand = cFull.includes(mod);
+    if (inCand && !inTarget) score -= 95;
+    else if (inCand && inTarget) score += 22;
+  }
+
+  const tDur = Number(targetDur) || 0;
+  const cDur = Number(cand.duration) || 0;
+  if (tDur > 30 && cDur > 30) {
+    const diff = Math.abs(tDur - cDur);
+    if (diff > Math.max(30, tDur * 0.25)) return -500;
+    if (diff <= 3) score += 35;
+    else if (diff <= 8) score += 20;
+    else if (diff <= 15) score += 8;
+  }
+  if (tDur > 45 && cDur > 0 && cDur < 35) return -500;
+
+  return score;
+}
+function findDownloadedFileName(index, title, artist) {
+  if (!title && !artist) return null;
+  const key = `${sanitizeFilename(artist || 'unknown artist')} - ${sanitizeFilename(title || 'untitled')}`.toLowerCase();
+  return index.get(key) || null;
+}
+
 function stopServer() {
   return new Promise((resolve) => {
     if (!server.listening) return resolve();
@@ -7169,7 +7293,7 @@ function stopServer() {
   });
 }
 
-module.exports = { startServer, stopServer, PORT, getServerToken, fetchLyricsDirect, fetchGeniusLyrics, fetchNetEaseWords, parseYrc, upgradeArtworkUrl };
+module.exports = { startServer, stopServer, PORT, getServerToken, fetchLyricsDirect, fetchGeniusLyrics, fetchNetEaseWords, parseYrc, upgradeArtworkUrl, decodeUtf8Chunks, hasBrokenLyricText, cleanSearchResults, scoreImportedCandidate, findDownloadedFileName };
 
 if (require.main === module) {
   startServer();

@@ -47,6 +47,9 @@ let html = fs.readFileSync(indexHtmlPath, 'utf8');
 html = html.replace(/\.\.\/\.\.\/assets\//g, './assets/');
 html = html.replace(/\.\.\/\.\.\/node_modules\/@supabase\/supabase-js\/dist\/umd\/supabase\.js/g, './assets/supabase.js');
 
+// Remove desktop titlebar HTML entirely on mobile
+html = html.replace(/<header class="titlebar"[^>]*>[\s\S]*?<\/header>/i, '');
+
 // Add mobile viewport, safe-area meta, and bulletproof electronAPI shim
 const mobileHeaderShim = `<head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
@@ -55,6 +58,7 @@ const mobileHeaderShim = `<head>
   <script>
     window.isCapacitorApp = true;
     window.isMobile = true;
+    document.documentElement.classList.add('is-mobile', 'hide-titlebar');
     if (!window.electronAPI) {
       window.electronAPI = new Proxy({}, {
         get: (target, prop) => {
@@ -79,31 +83,18 @@ if (!html.includes('viewport-fit=cover')) {
   html = html.replace(/<head>/i, mobileHeaderShim);
 }
 
-// Add is-mobile and hide-titlebar classes to body
-html = html.replace(/<body([^>]*)>/i, '<body$1 class="is-mobile hide-titlebar">');
+// Add is-mobile and hide-titlebar classes to body properly without duplicate class attribute
+if (html.includes('<body class="')) {
+  html = html.replace('<body class="', '<body class="is-mobile hide-titlebar ');
+} else if (html.includes('<body')) {
+  html = html.replace('<body', '<body class="is-mobile hide-titlebar"');
+}
 fs.writeFileSync(indexHtmlPath, html, 'utf8');
 
 console.log('[Mobile Build] Adapting styles.css for mobile safe-areas...');
 const stylesCssPath = path.join(wwwDir, 'styles.css');
 let css = fs.readFileSync(stylesCssPath, 'utf8');
 css = css.replace(/\.\.\/\.\.\/assets\//g, './assets/');
-
-const mobileCssAdditions = `
-/* Lumo Mobile / Android Safe Area & Touch Styles */
-body.is-mobile {
-  padding-top: env(safe-area-inset-top, 0px) !important;
-  padding-bottom: env(safe-area-inset-bottom, 0px) !important;
-  -webkit-touch-callout: none !important;
-  -webkit-tap-highlight-color: transparent !important;
-  overscroll-behavior-y: none !important;
-}
-body.is-mobile .titlebar,
-body.is-mobile .titlebar-drag-region,
-body.is-mobile .titlebar-controls {
-  display: none !important;
-}
-`;
-css += mobileCssAdditions;
 fs.writeFileSync(stylesCssPath, css, 'utf8');
 
 console.log('[Mobile Build] www bundle ready successfully!');

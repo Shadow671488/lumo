@@ -7869,6 +7869,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (el.tvkSeekSlider && !isDraggingTvkSeek && dur > 0) {
         el.tvkSeekSlider.value = Math.round((cur / dur) * 1000);
       }
+      if (el.playbar && dur > 0) {
+        el.playbar.style.setProperty('--playbar-progress-percent', `${((cur / dur) * 100).toFixed(2)}%`);
+      }
     });
   }
 
@@ -14722,6 +14725,16 @@ function updateNavIndicator(animate) {
     });
   }
 
+  const playbarLeft = document.querySelector('.playbar-left');
+  if (playbarLeft) {
+    playbarLeft.addEventListener('click', () => {
+      const isMobile = !!(window.isMobile || window.isCapacitorApp || document.body.classList.contains('is-mobile') || window.innerWidth <= 680);
+      if (isMobile && el.btnToggleLyricsPanel) {
+        el.btnToggleLyricsPanel.click();
+      }
+    });
+  }
+
   if (el.btnCloseRightPanel) {
     el.btnCloseRightPanel.addEventListener('click', () => {
       state.isRightPanelOpen = false;
@@ -18304,6 +18317,11 @@ function bindCoverHoldZoom(wrapEl) {
   if (window.electronAPI && window.electronAPI.onWelcomeResult) window.electronAPI.onWelcomeResult((d) => applyWelcomeResult(d));
 
   function checkCompactLayout() {
+    const isMobileDevice = !!(window.isMobile || window.isCapacitorApp || (document.body && document.body.classList.contains('is-mobile')) || (document.documentElement && document.documentElement.classList.contains('is-mobile')) || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
+    if (isMobileDevice) {
+      if (document.body) document.body.classList.remove('mini', 'mini-lyrics-on');
+      return;
+    }
     const isMini = window.innerWidth <= 520;
     document.body.classList.toggle('mini', isMini);
     const savedLyricsOn = localStorage.getItem('lumo_mini_lyrics') === '1';

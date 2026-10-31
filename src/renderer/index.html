@@ -8,6 +8,16 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Google+Sans+Text:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
+  <script>
+    (function() {
+      if (window.isCapacitorApp || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+        window.isMobile = true;
+        document.documentElement.classList.add('is-mobile', 'hide-titlebar');
+        if (document.body) document.body.classList.add('is-mobile', 'hide-titlebar');
+        else window.addEventListener('DOMContentLoaded', () => document.body.classList.add('is-mobile', 'hide-titlebar'));
+      }
+    })();
+  </script>
 </head>
 <body class="no-nav-transition">
   <div id="splash"><div id="splash-logo"></div></div>
@@ -72,6 +82,7 @@
   </header>
 
   <div class="top-nav">
+    <div class="mobile-app-logo" id="mobile-app-logo" aria-label="Lumo"><span class="titlebar-riff-icon"></span></div>
     <div class="search-box-wrapper">
       <div class="search-box">
         <button id="search-icon-btn" class="search-icon-btn" title="Search" type="button">

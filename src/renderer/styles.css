@@ -5546,215 +5546,505 @@ svg.cache-snake-ring {
   }
 }
 
-@media (max-width: 600px) {
-  .app-layout {
-    flex-direction: column;
-  }
-  .sidebar {
-    order: 3;
-    width: 100%;
-    height: 56px;
-    flex-direction: row;
-    justify-content: space-around;
-    padding: 0;
-    position: fixed;
-    bottom: 0;
-    z-index: 200;
-    background: var(--md-sys-color-surface-container-high);
-    border-right: none;
-    border-top: 1px solid var(--md-sys-color-outline-variant);
-  }
-  .main-content {
-    flex: 1;
-    width: 100%;
-    overflow-x: hidden;
-    margin-bottom: 124px;
-  }
-  .top-nav {
-    flex-wrap: wrap;
-    height: auto;
-    padding: 8px 12px;
-    gap: 8px;
-  }
-  .playbar {
-    position: fixed;
-    bottom: 56px;
-    width: calc(100% - 16px);
-    margin: 0 8px 8px 8px;
-    padding: 8px 12px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-    border-radius: var(--md-shape-corner-l);
-    z-index: 150;
-  }
-  .playbar-right .volume-control-group, 
-  .visualizer-container {
+/* ==========================================================================
+   Lumo Mobile / Android Responsive Architecture
+   Applies when viewport is <= 680px OR body has .is-mobile
+   ========================================================================== */
+
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --mobile-nav-height: 56px;
+  --mobile-playbar-height: 58px;
+}
+
+/* 1. COMPLETELY HIDE DESKTOP TITLEBAR & WINDOW CONTROLS */
+body.is-mobile .titlebar,
+body.is-mobile #titlebar,
+body.hide-titlebar .titlebar,
+body.hide-titlebar #titlebar,
+@media (max-width: 680px) {
+  .titlebar,
+  #titlebar,
+  .titlebar-controls,
+  .titlebar-drag,
+  body.mini .titlebar,
+  body.mini #titlebar {
     display: none !important;
-  }
-  
-  .nav-group {
-    flex-direction: row;
-    width: 100%;
-    justify-content: space-around;
-    padding: 0;
-  }
-  .nav-item {
-    padding: 8px;
-    flex: 1;
-    display: flex;
-    justify-content: center;
-  }
-  .nav-label {
-    display: none;
-  }
-  
-  .featured-mixes-grid, .skeleton-grid {
-    grid-template-columns: 1fr !important;
-  }
-  
-  .right-panel {
-    position: fixed;
-    right: 0;
-    top: 0;
-    bottom: 56px;
-    width: 100%;
-    z-index: 100;
+    height: 0 !important;
+    min-height: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    overflow: hidden !important;
   }
 }
 
-#cache-modal:not(.hidden) { display: flex !important; }
+/* 2. BODY & GENERAL MOBILE STYLES */
+body.is-mobile,
+@media (max-width: 680px) {
+  body {
+    overflow: hidden !important;
+    touch-action: manipulation !important;
+    -webkit-touch-callout: none !important;
+    -webkit-tap-highlight-color: transparent !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
+  }
 
-@media (max-width: 600px) {
   .app-layout {
-    height: auto;
-    flex: 1 1 auto;
-    min-height: 0;
-    padding: 0 8px;
-    gap: 8px;
-    margin-bottom: 156px;
+    display: flex !important;
+    flex-direction: column !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    gap: 0 !important;
+    overflow: hidden !important;
+    position: relative !important;
   }
-  .main-content {
-    margin-bottom: 0;
-    padding: 16px 12px;
-    border-radius: 20px;
-  }
+
+  /* 3. TOP NAVIGATION (Header with Lumo flower, search bar, profile) */
   .top-nav {
-    flex-wrap: nowrap;
-    height: auto;
-    padding: 8px 12px;
-    gap: 8px;
+    display: flex !important;
+    align-items: center !important;
+    height: auto !important;
+    min-height: 52px !important;
+    padding: calc(var(--safe-top, 0px) + 8px) 14px 8px 14px !important;
+    gap: 10px !important;
+    background: transparent !important;
+    z-index: 100 !important;
+    flex-shrink: 0 !important;
+    box-sizing: border-box !important;
   }
+
+  .mobile-app-logo {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 36px !important;
+    height: 36px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .mobile-app-logo .titlebar-riff-icon {
+    width: 24px !important;
+    height: 24px !important;
+    display: block !important;
+  }
+
   .search-box-wrapper {
     position: static !important;
     left: auto !important;
     transform: none !important;
     width: 100% !important;
-    flex: 1 1 0;
-    min-width: 0;
-    max-width: none;
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    margin: 0 !important;
   }
-  .platform-switch-container { flex-shrink: 0; }
-  .platform-btn span { display: none; }
-  .platform-btn { padding: 6px 10px; }
 
-  .sidebar {
-    left: 0;
-    right: 0;
-    bottom: 0;
-    width: 100%;
-    height: 56px;
-    border-radius: 0;
-    padding: 0 8px;
-    gap: 0;
-    flex-direction: row;
-    align-items: center;
+  .search-box {
+    height: 42px !important;
+    border-radius: 999px !important;
+    padding: 0 14px !important;
+    background: var(--md-sys-color-surface-container-high) !important;
+    border: 1px solid var(--md-sys-color-outline-variant) !important;
   }
-  .sidebar-nav {
-    flex-direction: row;
-    justify-content: space-around;
-    align-items: center;
-    gap: 0;
-    width: 100%;
-    height: 100%;
+
+  .search-box input {
+    font-size: 14px !important;
   }
-  .nav-active-indicator,
-  .rail-divider,
-  .rail-action-group,
-  #rail-drawer {
+
+  .user-profile-nav-btn {
+    width: 42px !important;
+    height: 42px !important;
+    min-width: 42px !important;
+    flex-shrink: 0 !important;
+    border-radius: 50% !important;
+    padding: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .profile-nav-name {
     display: none !important;
   }
-  .sidebar .nav-item {
-    flex: 1 1 0;
-    min-width: 0;
-    width: auto;
-    height: 40px;
-    max-width: 64px;
-    margin: 0 auto;
-    border-radius: 999px !important;
-  }
-  .sidebar .nav-indicator {
-    width: 100%;
-    height: 100%;
-    border-radius: 999px;
-  }
-  .sidebar .nav-item.active .nav-indicator {
-    background: transparent !important;
-    color: var(--md-sys-color-on-primary) !important;
+
+  /* 4. MAIN CONTENT AREA (Scrollable views) */
+  .main-content {
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior-y: contain !important;
+    /* Extra padding at bottom so content is never obscured by playbar + bottom nav */
+    padding: 8px 12px calc(var(--mobile-nav-height, 56px) + var(--mobile-playbar-height, 58px) + var(--safe-bottom, 0px) + 26px) 12px !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    box-sizing: border-box !important;
   }
 
+  /* 5. BOTTOM NAVIGATION BAR (.sidebar) */
+  .sidebar {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    height: calc(var(--mobile-nav-height, 56px) + var(--safe-bottom, 0px)) !important;
+    padding: 2px 6px calc(var(--safe-bottom, 0px) + 2px) 6px !important;
+    background: var(--md-sys-color-surface-container-high) !important;
+    border-top: 1px solid var(--md-sys-color-outline-variant) !important;
+    border-right: none !important;
+    border-radius: 0 !important;
+    z-index: 200 !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-around !important;
+    box-sizing: border-box !important;
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.28) !important;
+  }
+
+  .sidebar-nav {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-around !important;
+    align-items: center !important;
+    width: 100% !important;
+    height: 100% !important;
+    gap: 2px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  .sidebar-bottom-spacer,
+  .rail-divider,
+  .rail-action-group,
+  .nav-active-indicator,
+  .nav-profile-item,
+  #nav-stats,
+  #nav-queue {
+    display: none !important;
+  }
+
+  .sidebar .nav-item {
+    flex: 1 1 0 !important;
+    min-width: 0 !important;
+    width: auto !important;
+    height: 42px !important;
+    max-width: 68px !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    border-radius: 14px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .sidebar .nav-indicator {
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 14px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .sidebar .nav-item.active .nav-indicator {
+    background: color-mix(in srgb, var(--md-sys-color-primary) 18%, transparent) !important;
+    color: var(--md-sys-color-primary) !important;
+  }
+
+  .sidebar .nav-item svg,
+  .sidebar .nav-home-app-icon {
+    width: 22px !important;
+    height: 22px !important;
+  }
+
+  /* 6. FLOATING MOBILE PLAYBAR */
   .playbar {
-    left: 8px;
-    right: 8px;
-    bottom: 64px;
-    width: auto;
-    margin: 0;
-    height: auto;
-    padding: 8px 12px;
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
-    grid-template-rows: auto auto;
-    column-gap: 8px;
-    row-gap: 4px;
-    align-items: center;
+    position: fixed !important;
+    left: 8px !important;
+    right: 8px !important;
+    bottom: calc(var(--mobile-nav-height, 56px) + var(--safe-bottom, 0px) + 8px) !important;
+    width: auto !important;
+    height: var(--mobile-playbar-height, 58px) !important;
+    min-height: var(--mobile-playbar-height, 58px) !important;
+    margin: 0 !important;
+    padding: 6px 10px !important;
+    background: var(--md-sys-color-surface-container-highest) !important;
+    border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 45%, transparent) !important;
+    border-radius: 16px !important;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+    z-index: 180 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 8px !important;
+    box-sizing: border-box !important;
+    overflow: hidden !important;
   }
+
+  .playbar::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: var(--playbar-progress-percent, 0%);
+    height: 3px;
+    background: var(--md-sys-color-primary);
+    border-radius: 3px 3px 0 0;
+    pointer-events: none;
+    transition: width 0.15s linear;
+  }
+
   .playbar-left {
-    grid-column: 1;
-    grid-row: 1;
-    min-width: 0;
-    overflow: hidden;
-    gap: 10px;
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    cursor: pointer !important;
   }
-  .track-meta {
-    min-width: 0;
-    flex: 1 1 auto;
-    overflow: hidden;
+
+  .playbar-left .artwork-wrapper,
+  .playbar-left .m3c-wrap {
+    width: 44px !important;
+    height: 44px !important;
+    min-width: 44px !important;
+    border-radius: 10px !important;
+    flex-shrink: 0 !important;
+    overflow: hidden !important;
   }
-  .playbar-center { display: contents; }
+
+  .playbar-left .artwork-wrapper img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: cover !important;
+  }
+
+  .playbar-left .track-meta {
+    flex: 1 1 auto !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    gap: 2px !important;
+  }
+
+  .playbar-left .track-title {
+    font-size: 14px !important;
+    font-weight: 600 !important;
+    color: var(--md-sys-color-on-surface) !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .playbar-left .track-artist {
+    font-size: 12px !important;
+    color: var(--md-sys-color-on-surface-variant) !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  .playbar-center {
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+    flex-shrink: 0 !important;
+  }
+
   .playback-controls {
-    grid-column: 2;
-    grid-row: 1;
-    gap: 4px;
+    display: flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    margin: 0 !important;
   }
-  .playbar-right {
-    grid-column: 3;
-    grid-row: 1;
-    gap: 4px;
+
+  .playback-controls .control-btn {
+    width: 36px !important;
+    height: 36px !important;
+    min-width: 36px !important;
+    min-height: 36px !important;
+    border-radius: 50% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 !important;
   }
-  .scrubber-bar-wrapper {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    width: 100%;
+
+  .playback-controls .btn-play-pause {
+    width: 46px !important;
+    height: 46px !important;
+    min-width: 46px !important;
+    min-height: 46px !important;
+    border-radius: 50% !important;
+    background: var(--md-sys-color-primary) !important;
+    color: var(--md-sys-color-on-primary) !important;
+    box-shadow: 0 4px 12px color-mix(in srgb, var(--md-sys-color-primary) 35%, transparent) !important;
   }
+
+  .playbar-right,
+  .scrubber-bar-wrapper,
   #btn-shuffle,
   #btn-repeat,
   #btn-toggle-fav,
   #btn-edit-current-track,
-  #btn-playbar-more {
+  #btn-playbar-more,
+  .visualizer-container,
+  .volume-control-group {
     display: none !important;
   }
 
+  /* 7. TRACK LIST & TOUCH TARGETS */
+  .track-row {
+    min-height: 54px !important;
+    padding: 8px 10px !important;
+    border-radius: 12px !important;
+    gap: 12px !important;
+    margin-bottom: 2px !important;
+    cursor: pointer !important;
+  }
+
+  .track-row:active {
+    background: color-mix(in srgb, var(--md-sys-color-primary) 12%, transparent) !important;
+    transform: scale(0.985);
+  }
+
+  .track-artwork-thumb {
+    width: 44px !important;
+    height: 44px !important;
+    border-radius: 8px !important;
+    flex-shrink: 0 !important;
+  }
+
+  .track-title {
+    font-size: 15px !important;
+    font-weight: 500 !important;
+  }
+
+  .track-artist {
+    font-size: 13px !important;
+  }
+
+  .track-row-actions {
+    gap: 6px !important;
+  }
+
+  .track-row-actions button {
+    width: 38px !important;
+    height: 38px !important;
+    min-width: 38px !important;
+    border-radius: 50% !important;
+  }
+
+  /* 8. GRIDS & CARDS ON MOBILE */
+  .featured-mixes-grid,
+  .quick-picks-grid,
+  .sp-quick,
+  .skeleton-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  .search-albums-row {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 12px !important;
+  }
+
+  /* 9. MODALS & SHEETS */
+  .modal-overlay {
+    padding: 12px !important;
+  }
+
+  .modal-card {
+    max-width: 95vw !important;
+    border-radius: 24px !important;
+    padding: 20px 16px !important;
+    max-height: 85vh !important;
+  }
+
+  /* 10. SETTINGS TABS ON MOBILE */
+  .settings-layout {
+    flex-direction: column !important;
+    gap: 16px !important;
+  }
+
+  .settings-nav {
+    position: static !important;
+    flex-direction: row !important;
+    flex: none !important;
+    width: 100% !important;
+    overflow-x: auto !important;
+    scrollbar-width: none !important;
+    -webkit-overflow-scrolling: touch !important;
+    gap: 8px !important;
+    padding-bottom: 4px !important;
+  }
+
+  .settings-nav::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .settings-nav-btn {
+    flex: 0 0 auto !important;
+    height: 38px !important;
+    padding: 0 16px !important;
+    border-radius: 999px !important;
+    font-size: 13px !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 6px !important;
+  }
+
+  .settings-nav-btn span {
+    display: inline !important;
+  }
+
+  /* 11. FULL PLAYER / LYRICS SHEET ON MOBILE */
   .right-panel {
-    top: 40px;
-    bottom: 156px;
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    height: 100dvh !important;
+    z-index: 500 !important;
+    background: var(--md-sys-color-surface) !important;
+    padding: calc(var(--safe-top, 0px) + 12px) 16px calc(var(--safe-bottom, 0px) + 16px) 16px !important;
+    box-sizing: border-box !important;
+    flex-direction: column !important;
+  }
+
+  .right-panel.hidden {
+    display: none !important;
+  }
+
+  #rail-drawer {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: calc(var(--mobile-nav-height, 56px) + var(--safe-bottom, 0px)) !important;
+    width: 100% !important;
+    max-height: 70vh !important;
+    border-radius: 20px 20px 0 0 !important;
+    z-index: 250 !important;
+    box-shadow: 0 -8px 24px rgba(0,0,0,0.4) !important;
+    border-top: 1px solid var(--md-sys-color-outline-variant) !important;
   }
 }
 
@@ -9159,7 +9449,7 @@ body[data-theme="light"] .tv-karaoke {
 .presets-chips-container { align-content: flex-start !important; align-items: flex-start !important; justify-content: flex-start; gap: 8px; }
 .settings-nav { flex: 0 0 clamp(195px, 22vw, 235px); }
 .settings-nav-btn, .settings-nav-btn span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; box-sizing: border-box; }
-@media (max-width: 1020px) { body:not(.mini) .right-panel { display: none !important; } }
+@media (max-width: 1020px) { body:not(.mini) .right-panel.hidden { display: none !important; } }
 
 
 body.no-page-glow #playlist-hero-fx, body.no-page-glow #album-hero-fx { display: none !important; opacity: 0 !important; background: none !important; }

@@ -793,6 +793,141 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   applyFont(state.riffFont);
 
+  
+  function getServerBaseUrl() {
+    const configured = localStorage.getItem('lumo_server_url') || localStorage.getItem('riff_server_url');
+    if (configured && configured.trim()) {
+      let u = configured.trim();
+      if (!u.startsWith('http://') && !u.startsWith('https://')) u = 'http://' + u;
+      return u.replace(/\/+$/, '');
+    }
+    if (state.serverPort && state.serverPort !== 'null' && Number(state.serverPort) > 0) {
+      return 'http://127.0.0.1:' + state.serverPort;
+    }
+    return null;
+  }
+
+  async function searchTracksOnline(query, platform = 'youtube', limit = 20, offset = 0) {
+    const serverBase = getServerBaseUrl();
+    if (serverBase) {
+      const res = await fetch(serverBase + '/api/search?q=' + encodeURIComponent(query) + '&platform=' + encodeURIComponent(platform) + '&limit=' + limit + '&offset=' + offset);
+      return await res.json();
+    }
+
+    // Mobile standalone mode without local Node server:
+    // Query public Piped / Invidious instances
+    const cleanQ = encodeURIComponent(String(query || '').trim());
+    const pipedInstances = [
+      'https://pipedapi.kavin.rocks',
+      'https://api.piped.privacy.com.de',
+      'https://pipedapi.leptons.xyz',
+      'https://pipedapi.river.link'
+    ];
+
+    for (const base of pipedInstances) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const resp = await fetch(base + '/search?q=' + cleanQ + '&filter=music_songs', { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (resp.ok) {
+          const data = await resp.json();
+          const items = Array.isArray(data.items) ? data.items : [];
+          if (items.length > 0) {
+            const tracks = items.map(item => {
+              const videoId = (item.url || '').replace('/watch?v=', '');
+              return {
+                id: videoId || item.id,
+                title: item.title,
+                artist: item.uploaderName || 'Unknown Artist',
+                duration: item.duration || 180,
+                thumbnail: item.thumbnail || (videoId ? 'https://i.ytimg.com/vi/' + videoId + '/hqdefault.jpg' : ''),
+                url: item.url ? ('https://www.youtube.com' + item.url) : ('https://www.youtube.com/watch?v=' + videoId),
+                platform: 'youtube'
+              };
+            });
+            return { success: true, tracks };
+          }
+        }
+      } catch (_) {}
+    }
+
+    const invidiousInstances = ['https://inv.nadeko.net', 'https://invidious.nerdvpn.de', 'https://inv.tux.pizza'];
+    for (const base of invidiousInstances) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 6000);
+        const resp = await fetch(base + '/api/v1/search?q=' + cleanQ + '&type=video', { signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (resp.ok) {
+          const list = await resp.json();
+          if (Array.isArray(list) && list.length > 0) {
+            const tracks = list.slice(0, limit).map(item => ({
+              id: item.videoId,
+              title: item.title,
+              artist: item.author || 'Unknown Artist',
+              duration: item.lengthSeconds || 180,
+              thumbnail: (item.videoThumbnails && item.videoThumbnails[0]?.url) || ('https://i.ytimg.com/vi/' + item.videoId + '/hqdefault.jpg'),
+              url: 'https://www.youtube.com/watch?v=' + item.videoId,
+              platform: 'youtube'
+            }));
+            return { success: true, tracks };
+          }
+        }
+      } catch (_) {}
+    }
+
+    return { success: false, tracks: [], error: 'Could not connect to search providers' };
+  }
+
+  async function resolveMobileTrackStream(trackId, trackUrl, track, signal) {
+    let cleanId = trackId;
+    if (!cleanId && trackUrl && trackUrl.includes('v=')) {
+      cleanId = trackUrl.split('v=')[1].split('&')[0];
+    }
+    if (!cleanId && track && track.id) cleanId = track.id;
+
+    if (!cleanId) return { success: false, error: 'No video id found' };
+
+    const pipedInstances = [
+      'https://pipedapi.kavin.rocks',
+      'https://api.piped.privacy.com.de',
+      'https://pipedapi.leptons.xyz',
+      'https://pipedapi.river.link'
+    ];
+
+    for (const base of pipedInstances) {
+      try {
+        const resp = await fetch(base + '/streams/' + encodeURIComponent(cleanId), { signal });
+        if (resp.ok) {
+          const sData = await resp.json();
+          const audioStreams = sData.audioStreams || [];
+          if (audioStreams.length > 0) {
+            audioStreams.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+            return { success: true, streamUrl: audioStreams[0].url };
+          }
+        }
+      } catch (_) {}
+    }
+
+    const invidiousInstances = ['https://inv.nadeko.net', 'https://invidious.nerdvpn.de', 'https://inv.tux.pizza'];
+    for (const base of invidiousInstances) {
+      try {
+        const resp = await fetch(base + '/api/v1/videos/' + encodeURIComponent(cleanId), { signal });
+        if (resp.ok) {
+          const vData = await resp.json();
+          const audioStreams = (vData.adaptiveFormats || []).filter(f => (f.type || '').startsWith('audio/'));
+          if (audioStreams.length > 0) {
+            audioStreams.sort((a, b) => (b.bitrate || 0) - (a.bitrate || 0));
+            return { success: true, streamUrl: audioStreams[0].url };
+          }
+        }
+      } catch (_) {}
+    }
+
+    return { success: false, error: 'Could not resolve audio stream on mobile' };
+  }
+
   if (window.electronAPI && window.electronAPI.getServerPort) {
     try {
       state.serverPort = await window.electronAPI.getServerPort();
@@ -2978,6 +3113,11 @@ document.addEventListener('DOMContentLoaded', async () => {
             const val = Math.round((cur / dur) * 1000);
             if (el.tvkSeekSlider.value != val) el.tvkSeekSlider.value = val;
           }
+        } else if (state.isSeekingAudio && state.seekingTargetTime !== undefined) {
+          cur = state.seekingTargetTime;
+          const t = formatDuration(cur);
+          if (el.timeCurrent && el.timeCurrent.textContent !== t) el.timeCurrent.textContent = t;
+          if (el.tvkTimeCurrent && el.tvkTimeCurrent.textContent !== t) el.tvkTimeCurrent.textContent = t;
         } else if (state.isPlaying) {
           const roundedSec = Math.floor(cur);
           if (lastDisplayedSec !== roundedSec) {
@@ -3006,7 +3146,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         if (!state.isTvKaraokeOpen) {
           const targetProgress = dur > 0 ? Math.max(0, Math.min(1, cur / dur)) : 0;
-          if (isDraggingScrubber || !state.isPlaying) {
+          if (isDraggingScrubber && state.scrubberDragProgress !== undefined) {
+            scrubProgress = state.scrubberDragProgress;
+          } else if (state.isSeekingAudio && state.seekingProgress !== undefined) {
+            scrubProgress = state.seekingProgress;
+          } else if (!state.isPlaying) {
             scrubProgress = targetProgress;
           } else {
             const followSpeed = 45;
@@ -4027,19 +4171,25 @@ document.addEventListener('DOMContentLoaded', async () => {
       const declaredPlatform = String(track.platform || track.source || '').toLowerCase();
       const inferredPlatform = /soundcloud\.com/i.test(String(track.url || '')) ? 'soundcloud' : declaredPlatform;
       const streamPlatform = inferredPlatform === 'applemusic' ? 'youtube' : (inferredPlatform || (state.platform === 'all' ? 'youtube' : state.platform));
-      const streamInfoUrl = `http://127.0.0.1:${state.serverPort}/api/stream-info?url=${encodeURIComponent(resolvedUrl || '')}&id=${encodeURIComponent(resolvedId || '')}&platform=${streamPlatform}&title=${encodeURIComponent(track.title || '')}&artist=${encodeURIComponent(track.artist || '')}&duration=${encodeURIComponent(track.duration || 0)}&thumbnail=${encodeURIComponent(track.thumbnail || '')}`;
-      let res;
-      try {
-        res = await fetch(streamInfoUrl, { signal });
-      } catch (fetchErr) {
-        if (fetchErr instanceof TypeError) {
-          await new Promise(r => setTimeout(r, 600));
+      const serverBase = getServerBaseUrl();
+      let data = null;
+      if (serverBase) {
+        const streamInfoUrl = `${serverBase}/api/stream-info?url=${encodeURIComponent(resolvedUrl || '')}&id=${encodeURIComponent(resolvedId || '')}&platform=${streamPlatform}&title=${encodeURIComponent(track.title || '')}&artist=${encodeURIComponent(track.artist || '')}&duration=${encodeURIComponent(track.duration || 0)}&thumbnail=${encodeURIComponent(track.thumbnail || '')}`;
+        let res;
+        try {
           res = await fetch(streamInfoUrl, { signal });
-        } else {
-          throw fetchErr;
+        } catch (fetchErr) {
+          if (fetchErr instanceof TypeError) {
+            await new Promise(r => setTimeout(r, 600));
+            res = await fetch(streamInfoUrl, { signal });
+          } else {
+            throw fetchErr;
+          }
         }
+        data = await res.json();
+      } else {
+        data = await resolveMobileTrackStream(resolvedId, resolvedUrl, track, signal);
       }
-      let data = await res.json();
 
       if (currentToken !== state.loadToken) return;
 
@@ -7792,6 +7942,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     el.nativeAudio.addEventListener('seeked', () => {
+      state.isSeekingAudio = false;
+      state.seekingTargetTime = undefined;
+      state.seekingProgress = undefined;
       // Keep the paused resume position in sync with manual seeks. Otherwise
       // playSmooth() can restore the position captured when pause was pressed.
       if (!state.isPlaying && Number.isFinite(el.nativeAudio.currentTime)) {
@@ -7877,6 +8030,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   let isDraggingScrubber = false;
   let isHoveringScrubber = false;
+  let activeScrubberPointerId = null;
 
   function updateScrubberPositionFromEvent(e) {
     if (!el.scrubberTrack) return 0;
@@ -7884,17 +8038,79 @@ document.addEventListener('DOMContentLoaded', async () => {
     const padLeft = 6;
     const padRight = 6;
     const trackWidth = rect.width - padLeft - padRight;
-    let pos = trackWidth > 0 ? (e.clientX - rect.left - padLeft) / trackWidth : 0;
+    const clientX = (e.clientX !== undefined)
+      ? e.clientX
+      : (e.touches && e.touches[0] ? e.touches[0].clientX : (e.changedTouches && e.changedTouches[0] ? e.changedTouches[0].clientX : 0));
+    let pos = trackWidth > 0 ? (clientX - rect.left - padLeft) / trackWidth : 0;
     pos = Math.max(0, Math.min(1, pos));
-    const dur = (el.nativeAudio && Number.isFinite(el.nativeAudio.duration) && el.nativeAudio.duration > 0)
-      ? el.nativeAudio.duration
-      : (state.currentTrack && Number.isFinite(state.currentTrack.duration) ? state.currentTrack.duration : 0);
+    const dur = (typeof getReliableTrackDuration === 'function')
+      ? getReliableTrackDuration()
+      : ((el.nativeAudio && Number.isFinite(el.nativeAudio.duration) && el.nativeAudio.duration > 0)
+        ? el.nativeAudio.duration
+        : (state.currentTrack && Number.isFinite(state.currentTrack.duration) ? state.currentTrack.duration : 0));
     const targetTime = pos * dur;
 
     state.scrubberDragTargetTime = targetTime;
+    state.scrubberDragProgress = pos;
     scrubProgress = pos;
     if (el.timeCurrent) el.timeCurrent.textContent = formatDuration(targetTime);
+    if (el.tvkTimeCurrent) el.tvkTimeCurrent.textContent = formatDuration(targetTime);
+    if (el.playbar && dur > 0) {
+      el.playbar.style.setProperty('--playbar-progress-percent', `${(pos * 100).toFixed(2)}%`);
+    }
     return targetTime;
+  }
+
+  function handleScrubberStart(e) {
+    if (e.button !== undefined && e.button !== 0) return;
+    isDraggingScrubber = true;
+    hasDrawnPausedFrame = false;
+    activeScrubberPointerId = e.pointerId ?? null;
+    if (e.pointerId && el.scrubberTrack.setPointerCapture) {
+      try { el.scrubberTrack.setPointerCapture(e.pointerId); } catch (_) {}
+    }
+    if (el.scrubberTrack) el.scrubberTrack.classList.add('dragging');
+    if (!animationFrameId && typeof startVisualizers === 'function') startVisualizers();
+    updateScrubberPositionFromEvent(e);
+  }
+
+  function handleScrubberMove(e) {
+    if (!isDraggingScrubber) return;
+    updateScrubberPositionFromEvent(e);
+    hasDrawnPausedFrame = false;
+    if (!animationFrameId && typeof startVisualizers === 'function') startVisualizers();
+  }
+
+  function handleScrubberEnd(e) {
+    if (!isDraggingScrubber) return;
+    isDraggingScrubber = false;
+    if (el.scrubberTrack) el.scrubberTrack.classList.remove('dragging');
+    if (activeScrubberPointerId !== null && el.scrubberTrack && el.scrubberTrack.releasePointerCapture) {
+      try { el.scrubberTrack.releasePointerCapture(activeScrubberPointerId); } catch (_) {}
+      activeScrubberPointerId = null;
+    }
+    const targetTime = updateScrubberPositionFromEvent(e);
+    const dur = (typeof getReliableTrackDuration === 'function') ? getReliableTrackDuration() : (el.nativeAudio?.duration || 0);
+    const pos = dur > 0 ? Math.max(0, Math.min(1, targetTime / dur)) : 0;
+    if (!isNaN(targetTime) && el.nativeAudio) {
+      state.isSeekingAudio = true;
+      state.seekingTargetTime = targetTime;
+      state.seekingProgress = pos;
+      el.nativeAudio.currentTime = targetTime;
+      if (!state.isPlaying) frozenCurTime = targetTime;
+      updateMediaPositionState();
+      setTimeout(() => {
+        if (state.isSeekingAudio) {
+          state.isSeekingAudio = false;
+          state.seekingTargetTime = undefined;
+          state.seekingProgress = undefined;
+        }
+      }, 700);
+    }
+    state.scrubberDragTargetTime = undefined;
+    state.scrubberDragProgress = undefined;
+    hasDrawnPausedFrame = false;
+    if (!animationFrameId && typeof startVisualizers === 'function') startVisualizers();
   }
 
   if (el.scrubberTrack) {
@@ -7908,42 +8124,24 @@ document.addEventListener('DOMContentLoaded', async () => {
       hasDrawnPausedFrame = false;
       if (!animationFrameId && typeof startVisualizers === 'function') startVisualizers();
     });
-    el.scrubberTrack.addEventListener('mousedown', (e) => {
-      isDraggingScrubber = true;
-      hasDrawnPausedFrame = false;
-      if (!animationFrameId && typeof startVisualizers === 'function') startVisualizers();
-      el.scrubberTrack.classList.add('dragging');
-      const targetTime = updateScrubberPositionFromEvent(e);
-      if (!isNaN(targetTime) && el.nativeAudio) {
-        el.nativeAudio.currentTime = targetTime;
-      }
-    });
+
+    el.scrubberTrack.addEventListener('pointerdown', handleScrubberStart);
+    el.scrubberTrack.addEventListener('pointermove', handleScrubberMove);
+    el.scrubberTrack.addEventListener('pointerup', handleScrubberEnd);
+    el.scrubberTrack.addEventListener('pointercancel', handleScrubberEnd);
+
+    // Fallbacks
+    el.scrubberTrack.addEventListener('mousedown', handleScrubberStart);
+    el.scrubberTrack.addEventListener('touchstart', handleScrubberStart, { passive: false });
   }
 
-  window.addEventListener('mousemove', (e) => {
-    if (!isDraggingScrubber) return;
-    const targetTime = updateScrubberPositionFromEvent(e);
-    if (!isNaN(targetTime) && el.nativeAudio && !state.isPlaying) {
-      el.nativeAudio.currentTime = targetTime;
-    }
-    hasDrawnPausedFrame = false;
-    if (!animationFrameId && typeof startVisualizers === 'function') startVisualizers();
-  });
-
-  window.addEventListener('mouseup', (e) => {
-    if (!isDraggingScrubber) return;
-    isDraggingScrubber = false;
-    if (el.scrubberTrack) el.scrubberTrack.classList.remove('dragging');
-    const targetTime = updateScrubberPositionFromEvent(e);
-    if (!isNaN(targetTime) && el.nativeAudio) {
-      el.nativeAudio.currentTime = targetTime;
-      if (!state.isPlaying) frozenCurTime = targetTime;
-      updateMediaPositionState();
-    }
-    state.scrubberDragTargetTime = undefined;
-    hasDrawnPausedFrame = false;
-    if (!animationFrameId && typeof startVisualizers === 'function') startVisualizers();
-  });
+  window.addEventListener('pointermove', handleScrubberMove);
+  window.addEventListener('pointerup', handleScrubberEnd);
+  window.addEventListener('pointercancel', handleScrubberEnd);
+  window.addEventListener('mousemove', handleScrubberMove);
+  window.addEventListener('mouseup', handleScrubberEnd);
+  window.addEventListener('touchmove', handleScrubberMove, { passive: false });
+  window.addEventListener('touchend', handleScrubberEnd);
 
   let playbarTimelineTimer = null;
   if (el.playbar) {
@@ -8965,9 +9163,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (el.searchTracksList) el.searchTracksList.innerHTML = `<div class="empty-hint">Offline: connect to the internet to search new tracks</div>`;
         return;
       }
-      const searchUrl = `http://127.0.0.1:${state.serverPort}/api/search?q=${encodeURIComponent(state.searchQuery)}&platform=${state.platform}&limit=20`;
-      const res = await fetch(searchUrl);
-      const data = await res.json();
+      const data = await searchTracksOnline(state.searchQuery, state.platform, 20, 0);
       if (state.searchToken !== searchToken) return;
 
       if (!data.success || !data.tracks) {
@@ -9008,9 +9204,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (moreBtn) moreBtn.textContent = 'Loading…';
     try {
       const offset = (state.searchResults || []).length;
-      const searchUrl = `http://127.0.0.1:${state.serverPort}/api/search?q=${encodeURIComponent(state.searchQuery)}&platform=${state.platform}&limit=20&offset=${offset}`;
-      const res = await fetch(searchUrl);
-      const data = await res.json();
+      const data = await searchTracksOnline(state.searchQuery, state.platform, 20, offset);
       if (data.success && Array.isArray(data.tracks) && data.tracks.length > 0) {
         const seen = new Set((state.searchResults || []).map(t => (typeof getTrackCanonicalId === 'function' ? getTrackCanonicalId(t) : '') || t.id));
         const newTracks = data.tracks.filter(t => !seen.has((typeof getTrackCanonicalId === 'function' ? getTrackCanonicalId(t) : '') || t.id));
@@ -18319,7 +18513,10 @@ function bindCoverHoldZoom(wrapEl) {
   function checkCompactLayout() {
     const isMobileDevice = !!(window.isMobile || window.isCapacitorApp || (document.body && document.body.classList.contains('is-mobile')) || (document.documentElement && document.documentElement.classList.contains('is-mobile')) || /Android|iPhone|iPad|iPod/i.test(navigator.userAgent));
     if (isMobileDevice) {
-      if (document.body) document.body.classList.remove('mini', 'mini-lyrics-on');
+      if (document.body) {
+        document.body.classList.remove('mini', 'mini-lyrics-on');
+        document.body.classList.add('is-mobile', 'hide-titlebar');
+      }
       return;
     }
     const isMini = window.innerWidth <= 520;

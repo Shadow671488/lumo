@@ -5561,8 +5561,23 @@ svg.cache-snake-ring {
 /* 1. COMPLETELY HIDE DESKTOP TITLEBAR & WINDOW CONTROLS */
 body.is-mobile .titlebar,
 body.is-mobile #titlebar,
+body.is-mobile .titlebar-controls,
+body.is-mobile .titlebar-drag,
 body.hide-titlebar .titlebar,
 body.hide-titlebar #titlebar,
+body.hide-titlebar .titlebar-controls,
+body.hide-titlebar .titlebar-drag {
+  display: none !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  max-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  opacity: 0 !important;
+  pointer-events: none !important;
+  overflow: hidden !important;
+}
+
 @media (max-width: 680px) {
   .titlebar,
   #titlebar,
@@ -5583,7 +5598,6 @@ body.hide-titlebar #titlebar,
 }
 
 /* 2. BODY & GENERAL MOBILE STYLES */
-body.is-mobile,
 @media (max-width: 680px) {
   body {
     overflow: hidden !important;
@@ -11559,3 +11573,460 @@ body.perf .ota-btn-ignore {
   color: rgba(255, 255, 255, 0.88);
 }
 
+
+
+/* ==========================================================================
+   AUTHORITATIVE MOBILE (body.is-mobile) LAYOUT & OVERRIDES
+   Placed at the bottom of styles.css to ensure highest cascade priority.
+   ========================================================================== */
+
+body.is-mobile {
+  overflow: hidden !important;
+  touch-action: manipulation !important;
+  -webkit-touch-callout: none !important;
+  -webkit-tap-highlight-color: transparent !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+/* 1. Hide all window chrome and desktop overlays on mobile */
+body.is-mobile .titlebar,
+body.is-mobile #titlebar,
+body.is-mobile .titlebar-controls,
+body.is-mobile .titlebar-drag,
+body.is-mobile .panel-resize-edge {
+  display: none !important;
+  height: 0 !important;
+  width: 0 !important;
+  pointer-events: none !important;
+}
+
+/* 2. Fullscreen application layout */
+body.is-mobile .app-layout {
+  display: flex !important;
+  flex-direction: column !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  height: 100dvh !important;
+  max-height: 100dvh !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+  position: relative !important;
+}
+
+/* 3. Mobile Header / Top Bar */
+body.is-mobile .top-nav {
+  display: flex !important;
+  align-items: center !important;
+  height: auto !important;
+  min-height: 52px !important;
+  padding: calc(env(safe-area-inset-top, 0px) + 6px) 12px 6px 12px !important;
+  gap: 10px !important;
+  background: transparent !important;
+  z-index: 1000 !important;
+  flex-shrink: 0 !important;
+  box-sizing: border-box !important;
+}
+
+body.is-mobile .mobile-app-logo {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 36px !important;
+  height: 36px !important;
+  flex-shrink: 0 !important;
+}
+
+body.is-mobile .mobile-app-logo .titlebar-riff-icon {
+  width: 26px !important;
+  height: 26px !important;
+  display: block !important;
+}
+
+body.is-mobile .search-box-wrapper {
+  position: static !important;
+  left: auto !important;
+  transform: none !important;
+  width: 100% !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  max-width: none !important;
+  margin: 0 !important;
+}
+
+body.is-mobile .search-box {
+  height: 40px !important;
+  border-radius: 999px !important;
+  padding: 0 14px !important;
+  background: var(--md-sys-color-surface-container-high) !important;
+  border: 1px solid var(--md-sys-color-outline-variant) !important;
+}
+
+body.is-mobile .user-profile-nav-btn {
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  flex-shrink: 0 !important;
+  border-radius: 50% !important;
+  padding: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+body.is-mobile .profile-nav-name {
+  display: none !important;
+}
+
+/* 4. Scrollable main content */
+body.is-mobile .main-content {
+  flex: 1 1 auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch !important;
+  overscroll-behavior-y: contain !important;
+  padding: 6px 12px calc(56px + 60px + env(safe-area-inset-bottom, 0px) + 20px) 12px !important;
+  margin: 0 !important;
+  border-radius: 0 !important;
+  box-sizing: border-box !important;
+}
+
+/* 5. SIDEBAR AS MOBILE BOTTOM NAVIGATION BAR */
+body.is-mobile .sidebar {
+  position: fixed !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  top: auto !important;
+  width: 100% !important;
+  height: calc(56px + env(safe-area-inset-bottom, 0px)) !important;
+  min-height: calc(56px + env(safe-area-inset-bottom, 0px)) !important;
+  max-height: calc(56px + env(safe-area-inset-bottom, 0px)) !important;
+  padding: 2px 8px calc(env(safe-area-inset-bottom, 0px) + 2px) 8px !important;
+  background: var(--md-sys-color-surface-container) !important;
+  border-top: 1px solid var(--md-sys-color-outline-variant) !important;
+  border-right: none !important;
+  border-left: none !important;
+  border-bottom: none !important;
+  border-radius: 0 !important;
+  z-index: 2500 !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-around !important;
+  box-sizing: border-box !important;
+  box-shadow: 0 -2px 14px rgba(0, 0, 0, 0.32) !important;
+  margin: 0 !important;
+}
+
+body.is-mobile .sidebar-nav {
+  display: flex !important;
+  flex-direction: row !important;
+  justify-content: space-around !important;
+  align-items: center !important;
+  width: 100% !important;
+  height: 100% !important;
+  gap: 4px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+body.is-mobile .sidebar-bottom-spacer,
+body.is-mobile .rail-divider,
+body.is-mobile .rail-action-group,
+body.is-mobile .nav-active-indicator,
+body.is-mobile .nav-profile-item,
+body.is-mobile #nav-stats,
+body.is-mobile #nav-queue {
+  display: none !important;
+}
+
+body.is-mobile .sidebar .nav-item {
+  flex: 1 1 0 !important;
+  min-width: 0 !important;
+  max-width: 64px !important;
+  height: 42px !important;
+  margin: 0 auto !important;
+  padding: 0 !important;
+  border-radius: 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+body.is-mobile .sidebar .nav-indicator {
+  width: 100% !important;
+  height: 100% !important;
+  border-radius: 14px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+body.is-mobile .sidebar .nav-item.active .nav-indicator {
+  background: color-mix(in srgb, var(--md-sys-color-primary) 18%, transparent) !important;
+  color: var(--md-sys-color-primary) !important;
+}
+
+body.is-mobile .sidebar .nav-item svg,
+body.is-mobile .sidebar .nav-home-app-icon {
+  width: 24px !important;
+  height: 24px !important;
+}
+
+/* 6. FLOATING MOBILE MINI PLAYBAR - CLEAN & UN-CLUTTERED */
+body.is-mobile .playbar {
+  position: fixed !important;
+  left: 10px !important;
+  right: 10px !important;
+  bottom: calc(56px + env(safe-area-inset-bottom, 0px) + 8px) !important;
+  top: auto !important;
+  width: auto !important;
+  height: 58px !important;
+  min-height: 58px !important;
+  max-height: 58px !important;
+  margin: 0 !important;
+  padding: 6px 12px !important;
+  background: var(--md-sys-color-surface-container-high) !important;
+  border: 1px solid color-mix(in srgb, var(--md-sys-color-outline-variant) 45%, transparent) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45) !important;
+  z-index: 2200 !important;
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 10px !important;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+  grid-template-columns: none !important;
+}
+
+body.is-mobile .playbar::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: var(--playbar-progress-percent, 0%);
+  height: 3px;
+  background: var(--md-sys-color-primary);
+  border-radius: 3px 3px 0 0;
+  pointer-events: none;
+  transition: width 0.15s linear;
+}
+
+body.is-mobile .playbar-left {
+  display: flex !important;
+  align-items: center !important;
+  gap: 10px !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  cursor: pointer !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+body.is-mobile .playbar-left .artwork-wrapper,
+body.is-mobile .playbar-left .m3c-wrap {
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+  border-radius: 10px !important;
+  flex-shrink: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+}
+
+body.is-mobile .playbar-left .artwork-wrapper img {
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: cover !important;
+}
+
+body.is-mobile .playbar-left .track-meta {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  justify-content: center !important;
+  gap: 2px !important;
+  max-width: none !important;
+  padding: 0 !important;
+}
+
+body.is-mobile .playbar-left .track-title {
+  font-size: 14px !important;
+  font-weight: 600 !important;
+  color: var(--md-sys-color-on-surface) !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+body.is-mobile .playbar-left .track-artist {
+  font-size: 12px !important;
+  color: var(--md-sys-color-on-surface-variant) !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+body.is-mobile .playbar-center {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 6px !important;
+  width: auto !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  flex-shrink: 0 !important;
+}
+
+body.is-mobile .playback-controls {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+
+body.is-mobile .playback-controls .control-btn {
+  width: 38px !important;
+  height: 38px !important;
+  min-width: 38px !important;
+  min-height: 38px !important;
+  border-radius: 50% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+body.is-mobile .playback-controls .btn-play-pause {
+  width: 46px !important;
+  height: 46px !important;
+  min-width: 46px !important;
+  min-height: 46px !important;
+  border-radius: 50% !important;
+  background: var(--md-sys-color-primary) !important;
+  color: var(--md-sys-color-on-primary) !important;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--md-sys-color-primary) 35%, transparent) !important;
+}
+
+/* HIDE ALL CLUTTER THAT OVERLAPS ON THE MOBILE PLAYBAR */
+body.is-mobile .playbar-right,
+body.is-mobile .scrubber-bar-wrapper,
+body.is-mobile #btn-shuffle,
+body.is-mobile #btn-repeat,
+body.is-mobile #btn-toggle-fav,
+body.is-mobile #btn-edit-current-track,
+body.is-mobile #btn-playbar-more,
+body.is-mobile .visualizer-container,
+body.is-mobile .volume-control-group {
+  display: none !important;
+}
+
+/* 7. TOUCH-FRIENDLY TRACK ROWS AND BUTTONS */
+body.is-mobile .track-row {
+  min-height: 56px !important;
+  padding: 8px 10px !important;
+  border-radius: 12px !important;
+  gap: 12px !important;
+  margin-bottom: 3px !important;
+  cursor: pointer !important;
+}
+
+body.is-mobile .track-artwork-thumb {
+  width: 46px !important;
+  height: 46px !important;
+  border-radius: 10px !important;
+  flex-shrink: 0 !important;
+}
+
+body.is-mobile .track-title {
+  font-size: 15px !important;
+  font-weight: 500 !important;
+}
+
+body.is-mobile .track-artist {
+  font-size: 13px !important;
+}
+
+body.is-mobile .track-row-actions button {
+  width: 40px !important;
+  height: 40px !important;
+  min-width: 40px !important;
+  border-radius: 50% !important;
+}
+
+body.is-mobile .featured-mixes-grid,
+body.is-mobile .quick-picks-grid,
+body.is-mobile .sp-quick,
+body.is-mobile .skeleton-grid {
+  grid-template-columns: 1fr !important;
+  gap: 10px !important;
+}
+
+/* 8. SETTINGS ON MOBILE */
+body.is-mobile .settings-layout {
+  flex-direction: column !important;
+  gap: 14px !important;
+}
+
+body.is-mobile .settings-nav {
+  position: static !important;
+  flex-direction: row !important;
+  flex: none !important;
+  width: 100% !important;
+  overflow-x: auto !important;
+  scrollbar-width: none !important;
+  -webkit-overflow-scrolling: touch !important;
+  gap: 8px !important;
+  padding-bottom: 6px !important;
+}
+
+body.is-mobile .settings-nav::-webkit-scrollbar {
+  display: none !important;
+}
+
+body.is-mobile .settings-nav-btn {
+  flex: 0 0 auto !important;
+  height: 40px !important;
+  padding: 0 16px !important;
+  border-radius: 999px !important;
+  font-size: 13px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+}
+
+/* 9. FULLSCREEN LYRICS / FULL PLAYER MODAL ON MOBILE */
+body.is-mobile .right-panel {
+  position: fixed !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  height: 100dvh !important;
+  z-index: 3000 !important;
+  background: var(--md-sys-color-surface) !important;
+  padding: calc(env(safe-area-inset-top, 0px) + 12px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px) 16px !important;
+  box-sizing: border-box !important;
+  flex-direction: column !important;
+}
+
+/* 10. SCRUBBER TRACK TOUCH ACTION */
+.scrubber-track-container,
+#scrubber-track {
+  touch-action: none !important;
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}

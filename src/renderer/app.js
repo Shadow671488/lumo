@@ -19023,6 +19023,10 @@ function bindCoverHoldZoom(wrapEl) {
 
     if (btn) {
       btn.addEventListener('click', async () => {
+        if (isUpdateDownloaded) {
+          populateOtaUpdateSheet(latestUpdateInfo || { version: "44.0.2" });
+          return;
+        }
         if (manualUpdateCheck) return;
         manualUpdateCheck = true;
         btn.disabled = true;
@@ -19037,7 +19041,7 @@ function bindCoverHoldZoom(wrapEl) {
           if (manualUpdateCheck) {
             checkDirectFromRenderer();
           }
-        }, 6000);
+        }, 3000);
 
         try {
           const r = await api.checkForUpdates();
@@ -19081,6 +19085,7 @@ function bindCoverHoldZoom(wrapEl) {
     }
 
     const onDownloaded = (info) => {
+      restoreButton();
       isUpdateDownloaded = true;
       if (info && !latestUpdateInfo) {
         latestUpdateInfo = { ...info };

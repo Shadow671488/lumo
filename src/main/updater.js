@@ -104,8 +104,8 @@ function initUpdater(getWindow) {
       const eu = require('electron-updater');
       autoUpdater = eu.autoUpdater;
       if (isDev) autoUpdater.forceDevUpdateConfig = true;
-      autoUpdater.autoDownload = false;
-      autoUpdater.autoInstallOnAppQuit = false;
+      autoUpdater.autoDownload = true;
+      autoUpdater.autoInstallOnAppQuit = true;
 
       let isDownloaded = false;
 
@@ -154,7 +154,8 @@ function initUpdater(getWindow) {
 
       autoUpdater.on('download-progress', (p) => send('update-progress', { percent: Math.round(p.percent) }));
 
-      autoUpdater.on('update-downloaded', () => {
+      autoUpdater.on('update-downloaded', (info) => {
+        if (!current && info) current = info;
         isDownloaded = true;
         if (installNow) {
           autoUpdater.quitAndInstall();

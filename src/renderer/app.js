@@ -496,9 +496,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   applyScale(savedScale);
 
   window.__handleAndroidBack = function() {
-    if (el.rightPanel && el.rightPanel.classList.contains('mobile-open')) {
+    if (el.rightPanel && (el.rightPanel.classList.contains('mobile-open') || document.body.classList.contains('mobile-lyrics-open'))) {
       el.rightPanel.classList.remove('mobile-open');
       el.rightPanel.classList.add('hidden');
+      document.body.classList.remove('mobile-lyrics-open');
+      state.isRightPanelOpen = false;
+      if (el.btnToggleLyricsPanel) el.btnToggleLyricsPanel.classList.remove('active');
       return true;
     }
     const openModal = document.querySelector('.m3-dialog-backdrop:not(.hidden), .modal:not(.hidden), .m3-modal:not(.hidden)');
@@ -914,7 +917,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             album: item.collectionName || '',
             duration: Math.round((item.trackTimeMillis || 180000) / 1000),
             thumbnail: (item.artworkUrl100 || '').replace('100x100bb', '600x600bb'),
-            streamUrl: item.previewUrl || '',
+            streamUrl: '',
             previewUrl: item.previewUrl || '',
             platform: 'itunes'
           }));
@@ -1007,7 +1010,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function resolveMobileTrackStream(trackId, trackUrl, track, signal) {
-    if (track && (track.streamUrl || track.previewUrl)) {
+    const isSnippetUrl = (u) => typeof u === 'string' && (u.includes('audio-ssl.itunes.apple.com') || u.includes('dzcdn.net') || u.includes('preview'));
+    if (track && track.streamUrl && !isSnippetUrl(track.streamUrl)) {
       return { success: true, streamUrl: track.streamUrl || track.previewUrl };
     }
 
@@ -1018,7 +1022,32 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (!cleanId && track && track.id) cleanId = track.id;
     if (cleanId === 'undefined' || cleanId === 'null') cleanId = null;
 
-    if (cleanId && (String(cleanId).startsWith('itunes_') || String(cleanId).startsWith('deezer_'))) {
+    const isNonYoutubeId = !cleanId || String(cleanId).startsWith('itunes_') || String(cleanId).startsWith('dz_') || String(cleanId).startsWith('deezer_') || String(cleanId).length !== 11;
+    if (isNonYoutubeId) {
+      const fullSearchQuery = ((track?.artist ? track.artist + ' - ' : '') + (track?.title || '')).trim();
+      if (fullSearchQuery) {
+        const invInstances = ['https://yt.chocolatemoo53.com'];
+        for (const base of invInstances) {
+          try {
+            const ctrl = new AbortController();
+            const to = setTimeout(() => ctrl.abort(), 3500);
+            const resp = await fetch(base + '/api/v1/search?q=' + encodeURIComponent(fullSearchQuery) + '&type=video', { signal: ctrl.signal });
+            clearTimeout(to);
+            if (resp.ok) {
+              const list = await resp.json();
+              if (Array.isArray(list) && list.length > 0) {
+                const found = list.find(item => item && item.videoId);
+                if (found && found.videoId) {
+                  cleanId = found.videoId;
+                  break;
+                }
+              }
+            }
+          } catch (_) {}
+        }
+      }
+    }
+    if (false) {
       if (track?.streamUrl || track?.previewUrl) {
         return { success: true, streamUrl: track.streamUrl || track.previewUrl };
       }
@@ -1026,7 +1055,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 1. Primary: Invidious adaptive formats audio
     if (cleanId) {
-      const invidiousInstances = ['https://yt.chocolatemoo53.com'];
+      const invidiousInstances = ['https://yt.chocolatemoo53.com', 'https://inv.nadeko.net', 'https://invidious.nerdvpn.de', 'https://invidious.jing.rocks', 'https://yt.drgnz.club'];
       for (const base of invidiousInstances) {
         try {
           const controller = new AbortController();
@@ -1064,6 +1093,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (_) {}
     }
 
+    if (track?.previewUrl) {
+      return { success: true, streamUrl: track.previewUrl, isSnippetPreview: true };
+    }
     return { success: false, error: 'Could not resolve audio stream' };
   }
 
@@ -2628,6 +2660,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   setInterval(() => {
     const audio = el.nativeAudio;
     if (!audioEngine || !audioEngine.getLevelDb || !audio || audio.paused || !state.isPlaying) return;
+    if (!normalizeEnabled()) {
+      if (levelAvgDb > -120) resetLevelWatcher();
+      return;
+    }
     const db = audioEngine.getLevelDb();
     if (normalizeEnabled()) {
       if (db > -50) {
@@ -2888,6 +2924,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     let freqData = bufferLength > 0 ? new Uint8Array(bufferLength) : null;
 
     function renderLoop(timestamp) {
+      if (isMobileEnvironment()) {
+        if (!state.isPlaying && !isDraggingScrubber) {
+          animationFrameId = null;
+          return;
+        }
+        animationFrameId = requestAnimationFrame(renderLoop);
+        if (timestamp - lastFrameTime < 60) return;
+        lastFrameTime = timestamp;
+        try {
+          const ct = (el.nativeAudio && Number.isFinite(el.nativeAudio.currentTime)) ? el.nativeAudio.currentTime : 0;
+          if (typeof updateMediaPositionState === 'function') updateMediaPositionState();
+          if (typeof updateSyncedLyricsHighlight === 'function') updateSyncedLyricsHighlight(ct);
+        } catch (_) {}
+        return;
+      }
       if (document.hidden || !state.isWindowVisible) {
         animationFrameId = null;
         if (audioEngine && audioEngine.setAnalyserEnabled) audioEngine.setAnalyserEnabled(false);
@@ -4144,8 +4195,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       state.isRadioQueue = false;
     }
     crossfadeTriggered = false;
+    crossfadeFadeInPending = false;
     state.nextTrackPrefetched = false;
     initAudioContext();
+    if (audioEngine) {
+      if (audioEngine.fadeGain) {
+        try {
+          audioEngine.fadeGain.gain.cancelScheduledValues(0);
+          audioEngine.fadeGain.gain.value = 1.0;
+        } catch (_) {}
+      }
+      if (typeof audioEngine.setVolume === 'function') {
+        audioEngine.setVolume(state.volume, state.isMuted);
+      }
+    }
     el.nativeAudio.preload = 'auto';
 
     try {
@@ -4280,7 +4343,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           const tParam = encodeURIComponent(track.title || '');
           const aParam = encodeURIComponent(track.artist || '');
           const idParam = encodeURIComponent(track.id || '');
-          const cacheRes = await fetch(`http://127.0.0.1:${state.serverPort}/api/check-cache?id=${idParam}&title=${tParam}&artist=${aParam}`, { signal });
+          const cacheRes = await fetch(`http://127.0.0.1:${state.serverPort}/api/check-cache?id=${idParam}&title=${tParam}&artist=${aParam}&duration=${encodeURIComponent(track.duration || 0)}`, { signal });
           const cacheData = await cacheRes.json();
           if (currentToken !== state.loadToken) return;
           if (cacheData && cacheData.cached && cacheData.streamUrl) {
@@ -4402,12 +4465,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         hlsInstance.attachMedia(el.nativeAudio);
         hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
           if (currentToken === state.loadToken) {
-            playSmooth();
+            if (state.isPlaying && !state._userPausedDuringLoad) {
+              playSmooth();
+            } else {
+              updatePlayPauseButton(false, false);
+            }
           }
         });
       } else {
         el.nativeAudio.src = data.streamUrl;
-        playSmooth();
+        if (state.isPlaying && !state._userPausedDuringLoad) {
+          playSmooth();
+        } else {
+          updatePlayPauseButton(false, false);
+        }
       }
 
       applyAudioSettings();
@@ -7495,6 +7566,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.addEventListener('beforeunload', () => { isAppClosing = true; });
 
   function pauseSmooth() {
+    if (state.isTrackLoading) { state._userPausedDuringLoad = true; }
+    updatePlayPauseButton(false, false);
     const curToken = ++smoothFadeToken;
     isPauseFading = true;
     frozenCurTime = (el.nativeAudio && Number.isFinite(el.nativeAudio.currentTime)) ? el.nativeAudio.currentTime : 0;
@@ -7539,8 +7612,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (audioEngine && audioEngine.fadeGain && audioEngine.ctx) {
       try {
         const ct = audioEngine.ctx.currentTime;
-        audioEngine.fadeGain.gain.cancelScheduledValues(ct);
-        audioEngine.fadeGain.gain.setTargetAtTime(0, ct, 0.035);
+        audioEngine.fadeGain.gain.cancelScheduledValues(0);
+        audioEngine.fadeGain.gain.setValueAtTime(audioEngine.fadeGain.gain.value, ct);
+        audioEngine.fadeGain.gain.linearRampToValueAtTime(0.0001, ct + 0.08);
       } catch (e) {}
     }
 
@@ -7559,6 +7633,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function playSmooth() {
+    state._userPausedDuringLoad = false;
     const curToken = ++smoothFadeToken;
     isPauseFading = false;
     state.isPlaying = true;
@@ -7570,8 +7645,30 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (el.pauseIcon) el.pauseIcon.classList.remove('hidden');
 
     initAudioContext();
-    if (audioEngine && audioEngine.ctx && (audioEngine.ctx.state === 'suspended' || audioEngine.ctx.state === 'interrupted')) {
-      audioEngine.ctx.resume().catch(() => {});
+    if (audioEngine) {
+      if (audioEngine.resumeAudioContext) {
+        try { audioEngine.resumeAudioContext(); } catch (_) {}
+      }
+      if (audioEngine.ctx && (audioEngine.ctx.state === 'suspended' || audioEngine.ctx.state === 'interrupted')) {
+        audioEngine.ctx.resume().catch(() => {});
+      }
+      if (audioEngine.fadeGain && audioEngine.ctx) {
+        try {
+          audioEngine.fadeGain.gain.cancelScheduledValues(0);
+          audioEngine.fadeGain.gain.value = 1.0;
+        } catch (_) {}
+      }
+      if (audioEngine.normGain && audioEngine.ctx) {
+        try {
+          audioEngine.normGain.gain.cancelScheduledValues(0);
+          audioEngine.normGain.gain.value = 1.0;
+        } catch (_) {}
+      }
+    }
+    if (el.nativeAudio) {
+      el.nativeAudio.muted = !!state.isMuted;
+      const targetElVol = state.isMuted ? 0 : Math.max(0.01, (state.volume || 0.85) * (state.volume || 0.85));
+      try { el.nativeAudio.volume = targetElVol; } catch (_) {}
     }
 
     if (audioEngine && audioEngine.fadeGain && audioEngine.ctx) {
@@ -7579,6 +7676,16 @@ document.addEventListener('DOMContentLoaded', async () => {
         const ct = audioEngine.ctx.currentTime;
         audioEngine.fadeGain.gain.cancelScheduledValues(ct);
         audioEngine.fadeGain.gain.setValueAtTime(1, ct);
+        audioEngine.fadeGain.gain.value = 1.0;
+        if (typeof audioEngine.setVolume === 'function') audioEngine.setVolume(state.volume, state.isMuted);
+        if (el.volumeSlider && Number.isFinite(state.volume)) {
+          el.volumeSlider.value = String(state.volume);
+          const wrap = el.volumeSlider.closest('.sl');
+          if (wrap) {
+            const v = (!state.isMuted && state.volume > 0) ? (0.06 + state.volume * 0.94) : 0;
+            wrap.style.setProperty('--v', v);
+          }
+        }
       } catch (_) {}
     }
 
@@ -7888,7 +7995,15 @@ document.addEventListener('DOMContentLoaded', async () => {
                   hlsInstance = new Hls({ enableWorker: true, lowLatencyMode: false, startPosition: 0, backBufferLength: 90, maxBufferLength: 60, maxMaxBufferLength: 120, maxBufferSize: 60 * 1000 * 1000 });
                   hlsInstance.loadSource(streamData.streamUrl);
                   hlsInstance.attachMedia(el.nativeAudio);
-                  hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => { if (loadToken === state.loadToken) playSmooth(); });
+                  hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
+                    if (loadToken === state.loadToken) {
+                      if (state.isPlaying && !state._userPausedDuringLoad) {
+                        playSmooth();
+                      } else {
+                        updatePlayPauseButton(false, false);
+                      }
+                    }
+                  });
                 } else {
                   el.nativeAudio.src = streamData.isLocal ? streamData.streamUrl : (streamData.proxyUrl || streamData.streamUrl);
                   playSmooth();
@@ -13376,7 +13491,14 @@ function renderClickableArtists(container, rawArtist) {
     const telegramBotUrl = 'https://t.me/LumoAuthBot';
     [inputName, inputDisplayName, inputPassword, inputPasswordConfirm, inputCode].forEach(input => { if (input) { input.value = ''; input.disabled = false; } });
 
-    const showError = message => { if (errAuth) { errAuth.textContent = message; errAuth.classList.add('visible'); } };
+    const showError = message => {
+      if (typeof showToast === 'function' && message) showToast(message, 'error');
+      if (errAuth) {
+        errAuth.textContent = message;
+        errAuth.classList.add('visible');
+        try { errAuth.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (_) {}
+      }
+    };
     const clearError = () => { if (errAuth) { errAuth.textContent = ''; errAuth.classList.remove('visible'); } };
     const setMode = nextMode => {
       authMode = ['login', 'reset'].includes(nextMode) ? nextMode : 'register';
@@ -13665,6 +13787,14 @@ function renderClickableArtists(container, rawArtist) {
     };
     if (btnSubmit) btnSubmit.onclick = doSubmit;
     if (btnResend) btnResend.onclick = () => { window.electronAPI?.openExternal?.(telegramBotUrl); };
+    if (inputCode) {
+      inputCode.addEventListener('input', () => {
+        const val = inputCode.value.trim();
+        if (val.length === 6 && /^\d{6}$/.test(val)) {
+          doSubmit();
+        }
+      });
+    }
     [inputName, inputDisplayName, inputPassword, inputPasswordConfirm, inputCode].forEach(input => {
       if (input) input.onkeydown = event => { if (event.key === 'Enter') { event.preventDefault(); doSubmit(); } };
     });
@@ -15128,10 +15258,15 @@ function updateNavIndicator(animate) {
   if (el.btnToggleLyricsPanel) {
     el.btnToggleLyricsPanel.addEventListener('click', () => {
       state.isRightPanelOpen = !state.isRightPanelOpen;
+      const isMobile = !!(window.isMobile || window.isCapacitorApp || document.body.classList.contains('is-mobile') || window.innerWidth <= 680);
+      if (isMobile && el.rightPanel && el.rightPanel.parentElement !== document.body) {
+        document.body.appendChild(el.rightPanel);
+      }
       if (el.rightPanel) {
         el.rightPanel.classList.toggle('hidden', !state.isRightPanelOpen);
         el.rightPanel.classList.toggle('mobile-open', state.isRightPanelOpen);
       }
+      document.body.classList.toggle('mobile-lyrics-open', !!(isMobile && state.isRightPanelOpen));
       el.btnToggleLyricsPanel.classList.toggle('active', state.isRightPanelOpen);
       if (state.isRightPanelOpen) {
         updateLyricsPadding();
@@ -15164,6 +15299,7 @@ function updateNavIndicator(animate) {
   if (el.btnCloseRightPanel) {
     el.btnCloseRightPanel.addEventListener('click', () => {
       state.isRightPanelOpen = false;
+      document.body.classList.remove('mobile-lyrics-open');
       if (el.rightPanel) {
         el.rightPanel.classList.add('hidden');
         el.rightPanel.classList.remove('mobile-open');
@@ -15549,8 +15685,7 @@ function bindCoverHoldZoom(wrapEl) {
       if (el.volumeIcon) el.volumeIcon.classList.add('hidden');
       if (el.volumeMutedIcon) el.volumeMutedIcon.classList.remove('hidden');
     }
-    const volGroup = el.volumeSlider.closest('.volume-control-group') || el.volumeSlider;
-    volGroup.addEventListener('wheel', (e) => {
+    el.volumeSlider.addEventListener('wheel', (e) => {
       e.preventDefault();
       e.stopPropagation();
       const step = e.deltaY < 0 ? 0.05 : -0.05;
@@ -15581,6 +15716,17 @@ function bindCoverHoldZoom(wrapEl) {
   if (el.btnVolumeMute) {
     el.btnVolumeMute.addEventListener('click', () => {
       state.isMuted = !state.isMuted;
+      if (!state.isMuted && (!state.volume || state.volume <= 0.01)) {
+        state.volume = 0.85;
+      }
+      if (el.volumeSlider) {
+        el.volumeSlider.value = String(state.volume);
+        const wrap = el.volumeSlider.closest('.sl');
+        if (wrap) {
+          const v = (!state.isMuted && state.volume > 0) ? (0.06 + state.volume * 0.94) : 0;
+          wrap.style.setProperty('--v', v);
+        }
+      }
       if (state.isMuted) {
         if (el.volumeIcon) el.volumeIcon.classList.add('hidden');
         if (el.volumeMutedIcon) el.volumeMutedIcon.classList.remove('hidden');

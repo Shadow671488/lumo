@@ -31,14 +31,22 @@ if (gradleResult.status !== 0) {
 }
 
 const pkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
-const version = pkg.version || '44.0.23';
+const version = pkg.version || '44.0.26';
 
 const apkSrc = path.join(androidDir, 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk');
 const apkDest = path.join(rootDir, `Lumo-${version}-android.apk`);
 fs.copyFileSync(apkSrc, apkDest);
 console.log('[3/4] Copied APK to', apkDest);
 
-console.log('[4/4] Installing APK on device R8YY30W323N...');
-execSync(`"${adbPath}" -s R8YY30W323N install -r "${apkDest}"`, { stdio: 'inherit' });
-
-console.log(`Successfully built and installed ${version}!`);
+console.log('[4/4] Checking device connection & installing APK...');
+try {
+  const devicesOutput = execSync(`"${adbPath}" devices`, { encoding: 'utf8' });
+  if (devicesOutput.includes('R8YY30W323N') || devicesOutput.match(/\n[^\s]+\s+device\b/)) {
+    execSync(`"${adbPath}" install -r "${apkDest}"`, { stdio: 'inherit' });
+    console.log(`Successfully built and installed ${version}!`);
+  } else {
+    console.log(`Device not currently connected via ADB. APK is ready at: ${apkDest}`);
+  }
+} catch (adbErr) {
+  console.warn(`ADB install skipped: ${adbErr.message}. APK is ready at: ${apkDest}`);
+}

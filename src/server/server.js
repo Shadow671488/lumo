@@ -241,6 +241,7 @@ function cleanTrackId(id) {
 }
 
 async function findCachedFile(trackId, title = '', artist = '') {
+  const expectedDuration = arguments[3] || 0;
   const cleanId = cleanTrackId(trackId);
   const extensions = ['.opus', '.webm', '.m4a', '.mp3', '.flac', '.wav', '.ogg'];
   if (cleanId) {
@@ -248,13 +249,17 @@ async function findCachedFile(trackId, title = '', artist = '') {
       const filePath = path.join(CACHE_DIR, `${cleanId}${ext}`);
       try {
         const stat = await fs.promises.stat(filePath);
-        if (stat.size > 20000) {
-          const now = new Date();
-          try {
-            await fs.promises.utimes(filePath, now, now);
-          } catch (e) {}
-          return filePath;
+        const expDur = typeof expectedDuration === 'number' ? expectedDuration : parseInt(expectedDuration || '0', 10);
+        const minSize = (expDur && expDur > 45) ? Math.min(850000, expDur * 12000) : 850000;
+        if (stat.size < minSize) {
+          try { await fs.promises.unlink(filePath); } catch (_) {}
+          continue;
         }
+        const now = new Date();
+        try {
+          await fs.promises.utimes(filePath, now, now);
+        } catch (e) {}
+        return filePath;
       } catch (e) {}
     }
   }
@@ -2355,8 +2360,9 @@ async function handleStreamInfo(req, res, trackUrl, trackId, platform = 'youtube
   }
   const meta = { title, artist, duration, thumbnail };
 
+  const durationNum = parseInt(duration || '0', 10);
   const [cachedFile, downloadedName] = await Promise.all([
-    cleanId ? findCachedFile(cleanId, title, artist) : Promise.resolve(null),
+    cleanId ? findCachedFile(cleanId, title, artist, durationNum) : Promise.resolve(null),
     (title || artist) ? findDownloadedFile(title, artist) : Promise.resolve(null)
   ]);
 
@@ -6819,7 +6825,8 @@ const server = http.createServer(async (req, res) => {
     const cleanId = cleanTrackId(trackId);
     const title = parsedUrl.query.title || '';
     const artist = parsedUrl.query.artist || '';
-    const cachedFile = await findCachedFile(cleanId, title, artist);
+    const duration = parseInt(parsedUrl.query.duration || '0', 10);
+    const cachedFile = await findCachedFile(cleanId, title, artist, duration);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ 
       cached: !!cachedFile, 

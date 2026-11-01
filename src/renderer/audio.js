@@ -140,11 +140,18 @@
         this.ctx = new AC({ latencyHint: 'playback' });
       }
 
-      if (this._attachedElement !== audioElement) {
+      if (!this._listenersAttached) {
+        this._listenersAttached = true;
         this._attachedElement = audioElement;
         audioElement.addEventListener('play', () => this.resumeAudioContext());
+        audioElement.addEventListener('playing', () => this.resumeAudioContext());
         audioElement.addEventListener('pause', () => this.suspendAudioContextDebounced(5000));
         audioElement.addEventListener('ended', () => this.suspendAudioContextDebounced(5000));
+        audioElement.addEventListener('timeupdate', () => {
+          if (this.ctx && (this.ctx.state === 'suspended' || this.ctx.state === 'interrupted') && !audioElement.paused) {
+            this.resumeAudioContext();
+          }
+        });
       }
 
       if (!this.graphInitialized) {
@@ -531,8 +538,9 @@
     _applyMasterVolume() {
       if (this.fadeGain && this.ctx) {
         try {
-          this.fadeGain.gain.cancelScheduledValues(this.ctx.currentTime);
+          this.fadeGain.gain.cancelScheduledValues(0);
           this.fadeGain.gain.setValueAtTime(1.0, this.ctx.currentTime);
+          this.fadeGain.gain.value = 1.0;
         } catch (_) {}
       }
       const raw = this.isMuted ? 0 : Math.max(0, Math.min(1, Number.isFinite(this.volume) ? this.volume : 0.85));
@@ -541,13 +549,17 @@
       if (this._attachedElement) {
         try {
           window._isInternalVolumeUpdate = true;
-          this._attachedElement.volume = vol;
-          this._attachedElement.muted = this.graphInitialized ? false : !!this.isMuted;
+          this._attachedElement.volume = this.isMuted ? 0 : Math.max(0.01, vol);
+          this._attachedElement.muted = !!this.isMuted;
           setTimeout(() => { window._isInternalVolumeUpdate = false; }, 60);
         } catch (_) {}
       }
       if (this.masterGain) {
-        this.masterGain.gain.value = this.isMuted ? 0 : (Number.isFinite(this.audioSettings.volume) ? this.audioSettings.volume : 1.0);
+        try {
+          this.masterGain.gain.cancelScheduledValues(0);
+          const fxVol = (Number.isFinite(this.audioSettings?.volume) && this.audioSettings.volume > 0) ? this.audioSettings.volume : 1.0;
+          this.masterGain.gain.value = this.isMuted ? 0 : fxVol;
+        } catch (_) {}
       }
     }
 
@@ -565,8 +577,9 @@
       if (this.fadeGain && this.ctx) {
         try {
           const ct = this.ctx.currentTime;
-          this.fadeGain.gain.cancelScheduledValues(ct);
-          this.fadeGain.gain.setTargetAtTime(0, ct, Math.max(0.02, durationSec * 0.3));
+          this.fadeGain.gain.cancelScheduledValues(0);
+          this.fadeGain.gain.setValueAtTime(this.fadeGain.gain.value, ct);
+          this.fadeGain.gain.linearRampToValueAtTime(0.0001, ct + Math.max(0.05, durationSec));
         } catch (_) {}
       } else if (this.masterGain && this.ctx) {
         const current = this.masterGain.gain.value;
@@ -594,9 +607,12 @@
       if (this.fadeGain && this.ctx) {
         try {
           const ct = this.ctx.currentTime;
-          this.fadeGain.gain.cancelScheduledValues(ct);
+          this.fadeGain.gain.cancelScheduledValues(0);
           this.fadeGain.gain.setValueAtTime(0.1, ct);
           this.fadeGain.gain.linearRampToValueAtTime(1.0, ct + rampSec);
+          setTimeout(() => {
+            try { this.fadeGain.gain.value = 1.0; } catch (_) {}
+          }, (rampSec + 0.05) * 1000);
         } catch (_) {}
       }
       if (this.masterGain && this.ctx) {
@@ -644,9 +660,26 @@
         clearTimeout(this._suspendTimer);
         this._suspendTimer = null;
       }
-      if (this.ctx && this.ctx.state === 'suspended') {
-        return this.ctx.resume().catch(() => {});
+      if (this.fadeGain && this.ctx) {
+        try {
+          this.fadeGain.gain.cancelScheduledValues(0);
+          this.fadeGain.gain.setValueAtTime(1.0, this.ctx.currentTime);
+          this.fadeGain.gain.value = 1.0;
+        } catch (_) {}
       }
+      if (this.normGain && this.ctx) {
+        try {
+          this.normGain.gain.cancelScheduledValues(0);
+          this.normGain.gain.setValueAtTime(1.0, this.ctx.currentTime);
+          this.normGain.gain.value = 1.0;
+        } catch (_) {}
+      }
+      if (this.ctx && (this.ctx.state === 'suspended' || this.ctx.state === 'interrupted')) {
+        const p = this.ctx.resume().catch(() => {});
+        this._applyMasterVolume();
+        return p;
+      }
+      this._applyMasterVolume();
     }
 
     setHidden(hidden) {
@@ -677,8 +710,13 @@
 
     setNormalizeGainDb(db) {
       if (!this.normGain || !this.ctx) return;
-      const clampedDb = Math.max(-6, Math.min(6, typeof db === 'number' ? db : 0));
-      this.normGain.gain.setTargetAtTime(Math.pow(10, clampedDb / 20), this.ctx.currentTime, 0.8);
+      try {
+        const clampedDb = Math.max(-6, Math.min(6, typeof db === 'number' ? db : 0));
+        const targetVal = Math.pow(10, clampedDb / 20);
+        this.normGain.gain.cancelScheduledValues(0);
+        this.normGain.gain.setValueAtTime(this.normGain.gain.value, this.ctx.currentTime);
+        this.normGain.gain.setTargetAtTime(targetVal, this.ctx.currentTime, 0.8);
+      } catch (_) {}
     }
 
 

@@ -19,6 +19,23 @@ const net = require('net');
 const crypto = require('crypto');
 
 const PORT = 38472;
+
+function getBoundPort() {
+  try {
+    if (typeof server !== 'undefined' && server && typeof server.address === 'function') {
+      const a = server.address();
+      if (a && typeof a === 'object' && a.port) return a.port;
+    }
+  } catch (_) {}
+  return PORT;
+}
+
+function getServerBase(req) {
+  if (req && req.headers && req.headers.host) {
+    return `http://${req.headers.host}`;
+  }
+  return `http://127.0.0.1:${getBoundPort()}`;
+}
 const { DATA_DIR, CACHE_DIR, CUSTOM_LYRICS_DIR, LYRICS_DIR, THUMBNAILS_DIR, METADATA_PATH, LIBRARY_DIR, LIBRARY_PATH, ytDlpCommand, resolveDownloadDir, resolveBinary } = require('../shared/platform');
 const I18N_DIR = path.join(DATA_DIR, 'i18n');
 try { fs.mkdirSync(I18N_DIR, { recursive: true }); } catch (_) {}
@@ -1640,7 +1657,7 @@ async function prefetchTrack(trackUrl, trackId, platform) {
         isLocal: false,
         streamUrl: streamUrl,
         isHls: isHls,
-        proxyUrl: `http://127.0.0.1:${PORT}/api/audio-proxy?url=${encodeURIComponent(streamUrl)}`
+        proxyUrl: `${getServerBase(req)}/api/audio-proxy?url=${encodeURIComponent(streamUrl)}`
       };
       cacheSet(streamUrlCache, cacheKey, { timestamp: Date.now(), data });
       if (cleanId && cleanId !== cacheKey) {
@@ -2352,6 +2369,7 @@ async function handleStreamInfo(req, res, trackUrl, trackId, platform = 'youtube
   trackUrl = normalizeSoundCloudUrl(trackUrl);
   const parsedUrl = (req && req.url) ? url.parse(req.url, true) : { query: {} };
   const forShare = Boolean(parsedUrl.query && parsedUrl.query.forShare === '1');
+  const bypassCache = Boolean(parsedUrl.query && parsedUrl.query.bypassCache === '1');
   let cleanId = cleanTrackId(trackId);
   if (!cleanId && trackUrl && trackUrl.includes('v=')) {
     cleanId = cleanTrackId(trackUrl.split('v=')[1].split('&')[0]);
@@ -2364,11 +2382,11 @@ async function handleStreamInfo(req, res, trackUrl, trackId, platform = 'youtube
     (title || artist) ? findDownloadedFile(title, artist) : Promise.resolve(null)
   ]);
 
-  if (!forShare && cachedFile) {
+  if (!forShare && cachedFile && !bypassCache) {
     const data = {
       success: true,
       isLocal: true,
-      streamUrl: `http://127.0.0.1:${PORT}/api/local-track?id=${encodeURIComponent(cleanId)}`
+      streamUrl: `${getServerBase(req)}/api/local-track?id=${encodeURIComponent(cleanId)}`
     };
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify(data));
@@ -2379,7 +2397,7 @@ async function handleStreamInfo(req, res, trackUrl, trackId, platform = 'youtube
       success: true,
       isLocal: true,
       isDownload: true,
-      streamUrl: `http://127.0.0.1:${PORT}/api/downloaded-track?name=${encodeURIComponent(downloadedName)}`
+      streamUrl: `${getServerBase(req)}/api/downloaded-track?name=${encodeURIComponent(downloadedName)}`
     };
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify(data));
@@ -2399,7 +2417,7 @@ async function handleStreamInfo(req, res, trackUrl, trackId, platform = 'youtube
     const inflightUrl = await streamInfoInflight.get(cacheKey).catch(() => null);
     if (inflightUrl) {
       const isHls = inflightUrl.includes('.m3u8');
-      const data = { success: true, isLocal: false, streamUrl: inflightUrl, isHls, proxyUrl: `http://127.0.0.1:${PORT}/api/audio-proxy?url=${encodeURIComponent(inflightUrl)}` };
+      const data = { success: true, isLocal: false, streamUrl: inflightUrl, isHls, proxyUrl: `${getServerBase(req)}/api/audio-proxy?url=${encodeURIComponent(inflightUrl)}` };
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify(data));
     }
@@ -6861,7 +6879,7 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ 
       cached: !!cachedFile, 
-      streamUrl: cachedFile ? `http://127.0.0.1:${PORT}/api/local-track?id=${encodeURIComponent(cleanId)}&title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}` : null
+      streamUrl: cachedFile ? `${getServerBase(req)}/api/local-track?id=${encodeURIComponent(cleanId)}&title=${encodeURIComponent(title)}&artist=${encodeURIComponent(artist)}` : null
     }));
   }
 
@@ -6979,7 +6997,7 @@ const server = http.createServer(async (req, res) => {
         title: item.title,
         artist: item.artist,
         duration: Number(item.duration) || 0,
-        thumbnail: fs.existsSync(localCoverPath(item.id)) ? `http://127.0.0.1:${PORT}/api/local-cover?id=${encodeURIComponent(item.id)}` : ''
+        thumbnail: fs.existsSync(localCoverPath(item.id)) ? `${getServerBase(req)}/api/local-cover?id=${encodeURIComponent(item.id)}` : ''
       }));
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify(list));
@@ -7109,7 +7127,7 @@ const server = http.createServer(async (req, res) => {
             artist: meta.artist || 'Unknown artist',
             duration: meta.duration || 0,
             thumbnail: meta.thumbnail || '',
-            localThumbnail: fs.existsSync(path.join(THUMBNAILS_DIR, `${cleanId}.jpg`)) ? `http://127.0.0.1:${PORT}/api/local-thumbnail?id=${cleanId}` : (meta.thumbnail || ''),
+            localThumbnail: fs.existsSync(path.join(THUMBNAILS_DIR, `${cleanId}.jpg`)) ? `${getServerBase(req)}/api/local-thumbnail?id=${cleanId}` : (meta.thumbnail || ''),
             platform: meta.platform || 'youtube',
             fileSize: stat.size,
             lastPlayed: meta.lastPlayed || stat.mtimeMs,

@@ -4353,10 +4353,14 @@ document.addEventListener('DOMContentLoaded', async () => {
           const cacheRes = await fetch(`http://127.0.0.1:${state.serverPort}/api/check-cache?id=${idParam}&title=${tParam}&artist=${aParam}&duration=${encodeURIComponent(track.duration || 0)}`, { signal });
           const cacheData = await cacheRes.json();
           if (currentToken !== state.loadToken) return;
-          if (cacheData && cacheData.cached && cacheData.streamUrl) {
+          if (cacheData && cacheData.cached && cacheData.streamUrl && state._bypassCacheForTrackId !== track.id) {
+            let sUrl = cacheData.streamUrl;
+            if (state.serverPort && sUrl.includes('127.0.0.1:')) {
+              sUrl = sUrl.replace(/127\.0\.0\.1:\d+/, `127.0.0.1:${state.serverPort}`);
+            }
             isCached = true;
             el.nativeAudio.preload = 'auto';
-            el.nativeAudio.src = cacheData.streamUrl;
+            el.nativeAudio.src = sUrl;
             playSmooth();
             applyAudioSettings();
             return;
@@ -4390,7 +4394,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         try {
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 9000);
-          const streamInfoUrl = `${serverBase}/api/stream-info?url=${encodeURIComponent(resolvedUrl || '')}&id=${encodeURIComponent(resolvedId || '')}&platform=${streamPlatform}&title=${encodeURIComponent(track.title || '')}&artist=${encodeURIComponent(track.artist || '')}&duration=${encodeURIComponent(track.duration || 0)}&thumbnail=${encodeURIComponent(track.thumbnail || '')}`;
+          const bypassQuery = (state._bypassCacheForTrackId === track.id) ? '&bypassCache=1' : '';
+          const streamInfoUrl = `${serverBase}/api/stream-info?url=${encodeURIComponent(resolvedUrl || '')}&id=${encodeURIComponent(resolvedId || '')}&platform=${streamPlatform}&title=${encodeURIComponent(track.title || '')}&artist=${encodeURIComponent(track.artist || '')}&duration=${encodeURIComponent(track.duration || 0)}&thumbnail=${encodeURIComponent(track.thumbnail || '')}${bypassQuery}`;
           const res = await fetch(streamInfoUrl, { signal: controller.signal });
           clearTimeout(timeoutId);
           if (res.ok) {
@@ -4488,7 +4493,11 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         });
       } else {
-        el.nativeAudio.src = data.streamUrl;
+        let finalStreamUrl = data.streamUrl;
+        if (state.serverPort && typeof finalStreamUrl === 'string' && finalStreamUrl.includes('127.0.0.1:')) {
+          finalStreamUrl = finalStreamUrl.replace(/127\.0\.0\.1:\d+/, `127.0.0.1:${state.serverPort}`);
+        }
+        el.nativeAudio.src = finalStreamUrl;
         if (!state._userPausedDuringLoad) {
           playSmooth();
         } else {
@@ -7967,6 +7976,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       state.isPlaying = false;
       document.body.classList.remove('is-playing');
       updatePlayPauseButton(false, false);
+
+      // If local cache failed to play, fall back to remote stream resolution
+      if (el.nativeAudio.src && el.nativeAudio.src.includes('/api/local-track') && state.currentTrack) {
+        console.warn('[Playback] Local cached track failed to play, falling back to network stream...');
+        state._bypassCacheForTrackId = state.currentTrack.id;
+        playTrack(state.currentTrack, state.queue, state.queueIndex, state.currentTrackContext);
+        return;
+      }
       if (state.currentTrack && state.currentTrack.platform === 'local') {
         showToast('File missing from library');
       } else if (state.currentTrack) {

@@ -4221,6 +4221,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     try {
       el.nativeAudio.pause();
+      el.nativeAudio.removeAttribute('src');
+      el.nativeAudio.load();
     } catch (e) {}
     state._userPausedDuringLoad = false;
 
@@ -4279,6 +4281,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     if (state.playbackLoadTimeout) clearTimeout(state.playbackLoadTimeout);
     state.playbackLoadTimeout = setTimeout(() => {
       if (currentToken !== state.loadToken) return;
+      state.isTrackLoading = false;
       state.playbackLoadTimeout = null;
       try { el.nativeAudio.pause(); } catch (_) {}
       state.isPlaying = false;
@@ -4509,6 +4512,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (err) {
       if (err.name === 'AbortError') {
         if (currentToken === state.loadToken) {
+          state.isTrackLoading = false;
           if (state.playbackLoadTimeout) { clearTimeout(state.playbackLoadTimeout); state.playbackLoadTimeout = null; }
           state.isPlaying = false;
           updatePlayPauseButton(false, false);
@@ -4518,6 +4522,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
       if (currentToken === state.loadToken) {
+        state.isTrackLoading = false;
         if (state.playbackLoadTimeout) { clearTimeout(state.playbackLoadTimeout); state.playbackLoadTimeout = null; }
         console.warn('Track playback notice:', err);
         state.isPlaying = false;
@@ -7657,6 +7662,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function playSmooth() {
+    if (state.isTrackLoading && (!el.nativeAudio || !el.nativeAudio.src || el.nativeAudio.src === '' || el.nativeAudio.src === window.location.href)) {
+      return;
+    }
     state._userPausedDuringLoad = false;
     const curToken = ++smoothFadeToken;
     isPauseFading = false;
@@ -7778,6 +7786,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   function togglePlayPause() {
     if (!state.currentTrack) {
       startWaveIfIdle();
+      return;
+    }
+    if (state.isTrackLoading) {
+      state._userPausedDuringLoad = !state._userPausedDuringLoad;
+      updatePlayPauseButton(false, !state._userPausedDuringLoad);
       return;
     }
     if (state.isPlaying) {
@@ -8081,9 +8094,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (state.queue && nextIdx < state.queue.length) {
         const nextTrack = state.queue[nextIdx];
         if (nextTrack && nextTrack.platform !== 'local') {
+          const sBase = getServerBaseUrl() || (state.serverPort ? `http://127.0.0.1:${state.serverPort}` : null);
+          if (!sBase) return;
           const qUrl = nextTrack.url || '';
           const qId = nextTrack.id || '';
-          const qInfoUrl = `http://127.0.0.1:${state.serverPort}/api/stream-info?url=${encodeURIComponent(qUrl)}&id=${encodeURIComponent(qId)}&platform=${nextTrack.platform || state.platform}&title=${encodeURIComponent(nextTrack.title || '')}&artist=${encodeURIComponent(nextTrack.artist || '')}&duration=${encodeURIComponent(nextTrack.duration || 0)}&thumbnail=${encodeURIComponent(nextTrack.thumbnail || '')}`;
+          const qPlatform = nextTrack.platform || state.platform || 'youtube';
+          const qInfoUrl = `${sBase}/api/stream-info?url=${encodeURIComponent(qUrl)}&id=${encodeURIComponent(qId)}&platform=${qPlatform}&title=${encodeURIComponent(nextTrack.title || '')}&artist=${encodeURIComponent(nextTrack.artist || '')}&duration=${encodeURIComponent(nextTrack.duration || 0)}&thumbnail=${encodeURIComponent(nextTrack.thumbnail || '')}`;
           fetch(qInfoUrl).catch(() => {});
         }
       }
@@ -8091,12 +8107,17 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     el.nativeAudio.addEventListener('playing', () => {
       if (state.playbackLoadTimeout) { clearTimeout(state.playbackLoadTimeout); state.playbackLoadTimeout = null; }
+      state.isTrackLoading = false;
       state.isPlaying = true;
       document.body.classList.add('is-playing');
       updatePlayPauseButton(true, false);
     });
 
     el.nativeAudio.addEventListener('canplay', () => {
+      if (state.isTrackLoading && !state._userPausedDuringLoad) {
+        updatePlayPauseButton(false, true);
+        return;
+      }
       updatePlayPauseButton(state.isPlaying, false);
     });
 
@@ -8167,6 +8188,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     el.nativeAudio.addEventListener('pause', () => {
       isPauseFading = false;
       emitPluginEvent('pause');
+      if (state.isTrackLoading) {
+        updatePlayPauseButton(false, true);
+        return;
+      }
       updatePlayPauseButton(false, false);
       if (state.isPlaying) {
         state.isPlaying = false;
@@ -8343,7 +8368,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
       }
 
-      if (state.isPlaying && cur > 5 && !state.nextTrackPrefetched) {
+      if (state.isPlaying && cur > 1.5 && !state.nextTrackPrefetched) {
         state.nextTrackPrefetched = true;
         prefetchNextQueueTrack();
       }
@@ -17754,13 +17779,22 @@ function bindCoverHoldZoom(wrapEl) {
     { id: '02-editor.svg', label: 'Editor' },
     { id: '03-orbit.svg', label: 'Orbit' },
     { id: '04-vinyl.svg', label: 'Vinyl' },
+    { id: '05-hyperspace.svg', label: 'Hyperspace' },
     { id: '06-cosmos.svg', label: 'Cosmos' },
     { id: '07-aurora.svg', label: 'Aurora' },
     { id: '08-sunset.svg', label: 'Sunset' },
     { id: '09-amethyst.svg', label: 'Amethyst' },
     { id: '10-y2k-disc.svg', label: 'Y2K Disc' },
     { id: '11-cassette.svg', label: 'Cassette' },
-    { id: '12-invincible.svg', label: 'Invincible' }
+    { id: '12-invincible.svg', label: 'Invincible' },
+    { id: '13-blueprint.svg', label: 'Blueprint' },
+    { id: '14-galaxy.svg', label: 'Galaxy' },
+    { id: '15-opal.svg', label: 'Opal' },
+    { id: '16-chrome.svg', label: 'Chrome' },
+    { id: '17-eclipse.svg', label: 'Eclipse' },
+    { id: '18-nebula.svg', label: 'Nebula' },
+    { id: '19-horizon.svg', label: 'Horizon' },
+    { id: '20-halloween.svg', label: 'Halloween 2026' }
   ];
   function resolveAppIconSrc(val) {
     if (!val) return '../../assets/02-editor.svg';

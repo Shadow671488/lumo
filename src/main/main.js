@@ -54,6 +54,11 @@ const logger = {
   error: (msg, err, stack) => log('ERROR', `${msg}: ${err && err.message ? err.message : err}`, stack || (err && err.stack))
 };
 
+try {
+  if (process.stdout && typeof process.stdout.on === 'function') process.stdout.on('error', () => {});
+  if (process.stderr && typeof process.stderr.on === 'function') process.stderr.on('error', () => {});
+} catch (_) {}
+
 process.on('uncaughtException', (err) => {
   try { logger.error('Uncaught exception in main', err.message || err, err.stack); } catch (_) {}
 });
@@ -96,18 +101,18 @@ app.commandLine.appendSwitch('disable-background-networking');
 app.commandLine.appendSwitch('disable-domain-reliability');
 app.commandLine.appendSwitch('disable-sync');
 app.commandLine.appendSwitch('disable-speech-api');
-app.commandLine.appendSwitch('js-flags', '--max-old-space-size=384');
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=256 --expose-gc');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-blink-features', 'AutomationControlled');
-app.commandLine.appendSwitch('disk-cache-size', '52428800');
-app.commandLine.appendSwitch('media-cache-size', '52428800');
+app.commandLine.appendSwitch('disk-cache-size', '25165824');
+app.commandLine.appendSwitch('media-cache-size', '25165824');
 
 setInterval(() => {
   try {
     session.defaultSession.clearCache().catch(() => {});
     if (global.gc) global.gc();
   } catch (_) {}
-}, 180000);
+}, 90000);
 app.on('ready', () => {
   const cleanUA = (app.userAgentFallback || '').replace(/\s*Electron\/[^\s]+/gi, '').replace(/\s*riff\/[^\s]+/gi, '');
   if (cleanUA) app.userAgentFallback = cleanUA;
@@ -1193,7 +1198,7 @@ function runGUI() {
 
         if (move) {
           try {
-            await platform.copyDirContents(current, target);
+            await platform.copyDataEntries(current, target);
           } catch (e) {
             return { ok: false, error: 'Could not move files: ' + e.message };
           }
@@ -1202,7 +1207,7 @@ function runGUI() {
         platform.setDataDir(target);
 
         if (move) {
-          try { await platform.removeDirContents(current); } catch (e) {}
+          try { await platform.removeDataEntries(current); } catch (e) {}
         }
 
         return { ok: true, dir: target, moved: move };
@@ -1299,6 +1304,16 @@ function runGUI() {
         globalShortcut.unregisterAll();
       });
 
+      let windowButtonsWanted = true;
+      function syncWindowButtons() {
+        if (!IS_MAC || !mainWindow || mainWindow.isDestroyed()) return;
+        try { mainWindow.setWindowButtonVisibility(windowButtonsWanted && !isMiniWindow); } catch (_) {}
+      }
+      ipcMain.on('set-window-buttons-visible', (e, visible) => {
+        windowButtonsWanted = !!visible;
+        syncWindowButtons();
+      });
+
       let preMiniLyricsH = null;
       ipcMain.removeHandler('toggle-mini-window');
       ipcMain.handle('toggle-mini-window', () => {
@@ -1310,11 +1325,13 @@ function runGUI() {
           mainWindow.setMinimumSize(280, 115);
           mainWindow.setSize(380, 160);
           mainWindow.setAlwaysOnTop(true);
+          syncWindowButtons();
           return true;
         } else {
           isMiniWindow = false;
           preMiniLyricsH = null;
           mainWindow.setAlwaysOnTop(false);
+          syncWindowButtons();
           mainWindow.setMinimumSize(800, 540);
           if (preMiniBounds) {
             mainWindow.setBounds(clampBoundsToDisplay(preMiniBounds));
@@ -1539,62 +1556,115 @@ function runGUI() {
         return { success: true, loggedIn: true };
       }
 
+      const CLEAN_LOGIN_UA = process.platform === 'darwin'
+        ? 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+        : process.platform === 'win32'
+        ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+        : 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+
+      async function openYoutubeSignInWindow() {
+        if (!fs.existsSync(YT_LOGOUT_FLAG)) {
+          const imported = await exportYoutubeCookiesToDisk().catch(() => false);
+          if (imported && hasValidYtCookiesFile()) {
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('youtube-playback-auth', { success: true, loggedIn: true });
+            }
+            return { success: true, loggedIn: true };
+          }
+        }
+
+        if (youtubePlaybackWindow && !youtubePlaybackWindow.isDestroyed()) {
+          youtubePlaybackWindow.show();
+          youtubePlaybackWindow.focus();
+          return new Promise((resolve) => {
+            youtubePlaybackWindow.once('closed', () => {
+              resolve({ success: hasValidYtCookiesFile(), loggedIn: hasValidYtCookiesFile() });
+            });
+          });
+        }
+
+        const googleSession = session.fromPartition('persist:riff-google');
+        googleSession.setUserAgent(CLEAN_LOGIN_UA);
+
+        return new Promise((resolve) => {
+          const loginWindow = new BrowserWindow({
+            width: 960,
+            height: 720,
+            title: 'Sign in to YouTube Music',
+            autoHideMenuBar: true,
+            parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
+            webPreferences: {
+              session: googleSession,
+              nodeIntegration: false,
+              contextIsolation: true,
+              sandbox: true
+            }
+          });
+          youtubePlaybackWindow = loginWindow;
+          loginWindow.webContents.setUserAgent(CLEAN_LOGIN_UA);
+
+          let pollTimer = null;
+          let settled = false;
+          const finishAuth = async () => {
+            if (settled) return;
+            settled = true;
+            if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+            const result = await saveYoutubePlaybackCookies().catch(error => ({
+              success: false,
+              loggedIn: false,
+              error: error && error.message ? error.message : 'Could not save the YouTube session.'
+            }));
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('youtube-playback-auth', result);
+            }
+            resolve(result);
+          };
+
+          pollTimer = setInterval(async () => {
+            if (!loginWindow || loginWindow.isDestroyed()) {
+              clearInterval(pollTimer);
+              return;
+            }
+            try {
+              const cookies = await googleSession.cookies.get({});
+              const hasAuth = cookies.some(c =>
+                ['SAPISID', '__Secure-3PAPISID', '__Secure-1PAPISID', 'LOGIN_INFO'].includes(c.name) &&
+                String(c.domain || '').includes('youtube.com')
+              );
+              if (hasAuth) {
+                clearInterval(pollTimer);
+                pollTimer = null;
+                await finishAuth();
+                if (!loginWindow.isDestroyed()) loginWindow.close();
+              }
+            } catch (_) {}
+          }, 1200);
+
+          loginWindow.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
+            if (isYoutubeAuthUrl(targetUrl)) return { action: 'allow' };
+            shell.openExternal(targetUrl);
+            return { action: 'deny' };
+          });
+
+          loginWindow.once('closed', async () => {
+            if (youtubePlaybackWindow === loginWindow) youtubePlaybackWindow = null;
+            await finishAuth();
+          });
+
+          loginWindow.loadURL('https://accounts.google.com/ServiceLogin?service=youtube&uilel=3&passive=true&continue=https%3A%2F%2Fmusic.youtube.com%2F').then(() => {
+            if (!loginWindow.isDestroyed()) loginWindow.show();
+          }).catch(() => {
+            if (!loginWindow.isDestroyed()) loginWindow.loadURL('https://music.youtube.com/').catch(() => {});
+          });
+        });
+      }
+
       ipcMain.handle('youtube-playback-status', () => ({
         loggedIn: hasValidYtCookiesFile()
       }));
 
       ipcMain.handle('youtube-playback-login', async () => {
-        if (youtubePlaybackWindow && !youtubePlaybackWindow.isDestroyed()) {
-          youtubePlaybackWindow.show();
-          youtubePlaybackWindow.focus();
-          return { success: true };
-        }
-
-        const googleSession = session.fromPartition('persist:riff-google');
-        const loginWindow = new BrowserWindow({
-          width: 1000,
-          height: 760,
-          title: 'Sign in to YouTube',
-          autoHideMenuBar: true,
-          parent: mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined,
-          webPreferences: {
-            session: googleSession,
-            nodeIntegration: false,
-            contextIsolation: true,
-            sandbox: true
-          }
-        });
-        youtubePlaybackWindow = loginWindow;
-        loginWindow.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
-          if (isYoutubeAuthUrl(targetUrl)) return { action: 'allow' };
-          shell.openExternal(targetUrl);
-          return { action: 'deny' };
-        });
-        loginWindow.webContents.on('will-navigate', (event, targetUrl) => {
-          if (!isYoutubeAuthUrl(targetUrl)) {
-            event.preventDefault();
-            shell.openExternal(targetUrl);
-          }
-        });
-        loginWindow.once('closed', async () => {
-          if (youtubePlaybackWindow === loginWindow) youtubePlaybackWindow = null;
-          const result = await saveYoutubePlaybackCookies().catch(error => ({
-            success: false,
-            error: error && error.message ? error.message : 'Could not save the YouTube session.'
-          }));
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('youtube-playback-auth', result);
-          }
-        });
-
-        try {
-          await loginWindow.loadURL('https://music.youtube.com/');
-          loginWindow.show();
-          return { success: true };
-        } catch (error) {
-          if (!loginWindow.isDestroyed()) loginWindow.destroy();
-          return { success: false, error: error && error.message ? error.message : 'Could not open YouTube sign-in.' };
-        }
+        return await openYoutubeSignInWindow();
       });
 
       ipcMain.handle('youtube-playback-logout', async () => {
@@ -1634,8 +1704,6 @@ function runGUI() {
           } catch (_) {}
         };
         if (process.platform === 'linux') {
-          // Try Brave first: it is a common logged-in YouTube browser and the
-          // export stops at the first browser that actually has a login.
           addIfDir(path.join(home, '.config', 'BraveSoftware', 'Brave-Browser'), 'brave');
           addIfDir(path.join(home, '.mozilla', 'firefox'), 'firefox');
           addIfDir(path.join(home, '.config', 'google-chrome'), 'chrome');
@@ -1694,8 +1762,6 @@ function runGUI() {
           const ytdlpBin = resolveBinary('yt-dlp');
           if (!ytdlpBin) return false;
 
-          // Export each browser into a scratch jar first: a browser without a
-          // YouTube login must not overwrite cookies from one that has it.
           const specs = getCandidateBrowserSpecs();
           for (const spec of specs) {
             const tmpJar = path.join(DATA_DIR, `.yt-cookies-${process.pid}.tmp`);
@@ -1873,6 +1939,7 @@ function runGUI() {
         } catch (e) {
           return { loggedIn: false, error: e && e.message ? e.message : 'Google sign-in status unavailable' };
         }
+        return { loggedIn: false };
       });
 
       ipcMain.handle('google-logout', async () => {
@@ -1973,7 +2040,7 @@ function runGUI() {
         const cookies = await s.cookies.get({ name: 'SAPISID' });
         const sapisidCookie = Array.isArray(cookies) ? cookies.find(c => c && c.value) : null;
         if (!sapisidCookie) {
-          return { success: false, error: 'YouTube Music import still requires an active YouTube Music browser session.' };
+          return { success: false, error: 'YouTube import requires an active YouTube browser session.' };
         }
         const sapisid = sapisidCookie.value;
 

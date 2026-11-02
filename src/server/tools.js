@@ -7,7 +7,7 @@ const { spawn } = require('child_process');
 const { IS_WIN, BIN_DIR, resolveBinary, clearBinaryCache } = require('../shared/platform');
 const logger = require('../shared/logger');
 
-const state = { status: 'idle', tool: '', percent: 0, error: '' };
+const state = { status: 'idle', tool: '', percent: 0, error: '', ffmpegError: '' };
 const STAMP = path.join(BIN_DIR, '.ytdlp-update-stamp');
 
 function ytDlpAsset() {
@@ -159,19 +159,8 @@ async function installYtDlp() {
 async function installFfmpeg() {
   const asset = ffmpegAsset();
   if (process.platform === 'darwin' && !asset) {
-    const archive = path.join(os.tmpdir(), 'riff-ffmpeg-macos.zip');
-    try {
-      await downloadFile('https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip', archive);
-      await run('/usr/bin/unzip', ['-o', archive, '-d', BIN_DIR]);
-      const dest = path.join(BIN_DIR, 'ffmpeg');
-      if (fs.existsSync(dest)) fs.chmodSync(dest, 0o755);
-      return;
-    } catch (e) {
-      try { logger.error('macOS ffmpeg download failed', e); } catch (_) {}
-      return;
-    } finally {
-      try { fs.rmSync(archive, { force: true }); } catch (_) {}
-    }
+    await installFfmpegMac();
+    return;
   }
   if (!asset) throw new Error('No ffmpeg build for this system. Install ffmpeg with your package manager (for macOS: brew install ffmpeg).');
   const base = 'https://github.com/yt-dlp/FFmpeg-Builds/releases/latest/download';
@@ -216,6 +205,31 @@ async function installFfmpeg() {
   }
 }
 
+async function installFfmpegMac() {
+  const failures = [];
+  for (const name of ['ffmpeg', 'ffprobe']) {
+    const archive = path.join(os.tmpdir(), `riff-${name}-macos.zip`);
+    const dest = path.join(BIN_DIR, name);
+    try {
+      await downloadFile(`https://evermeet.cx/ffmpeg/getrelease/${name}/zip`, archive);
+      await run('/usr/bin/unzip', ['-o', archive, '-d', BIN_DIR]);
+      fs.chmodSync(dest, 0o755);
+      await run(dest, ['-version'], 30000);
+    } catch (e) {
+      try { fs.rmSync(dest, { force: true }); } catch (_) {}
+      failures.push(`${name}: ${e.message}`);
+    } finally {
+      try { fs.rmSync(archive, { force: true }); } catch (_) {}
+    }
+  }
+  if (failures.length) {
+    const hint = process.arch === 'arm64'
+      ? ' On Apple Silicon this build needs Rosetta (softwareupdate --install-rosetta), or run: brew install ffmpeg'
+      : ' Install it with: brew install ffmpeg';
+    throw new Error(`Could not install ffmpeg (${failures.join('; ')}).${hint}`);
+  }
+}
+
 function toolsStatus() {
   const ytdlp = !!resolveBinary('yt-dlp');
   const ffmpeg = !!resolveBinary('ffmpeg');
@@ -228,9 +242,8 @@ function toolsStatus() {
     error: state.error,
     progress: Object.assign({}, state)
   };
-  if (process.platform === 'darwin') {
-    status.ffmpeg = true;
-  }
+  status.ffmpegOptional = process.platform === 'darwin';
+  status.ffmpegError = state.ffmpegError;
   return status;
 }
 
@@ -248,8 +261,11 @@ async function ensureTools() {
       state.percent = 0;
       try {
         await installFfmpeg();
+        state.ffmpegError = '';
       } catch (err) {
         if (process.platform !== 'darwin') throw err;
+        state.ffmpegError = err.message;
+        try { logger.error('ffmpeg install failed', err); } catch (_) {}
       }
       clearBinaryCache();
     }
@@ -271,9 +287,6 @@ async function updateYtDlpIfManaged() {
   } catch (e) {}
   try {
     await run(bin, ['-U'], 120000);
-    // yt-dlp replaces its own executable while updating. If that fails halfway
-    // the managed binary can be gone, which would leave every playback attempt
-    // spawning a non-existent path. Reinstall it in that case.
     if (!fs.existsSync(bin)) {
       try { logger.log('warn', 'yt-dlp disappeared after self-update, reinstalling'); } catch (_) {}
       await installYtDlp();

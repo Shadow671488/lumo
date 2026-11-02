@@ -144,6 +144,7 @@ macOS support is currently experimental and compiled via continuous integration.
    ```bash
    brew install yt-dlp ffmpeg
    ```
+   Streaming works without ffmpeg; it is only needed for downloads and the audio editor.
 
 macOS application data and local indexes are stored in `~/Library/Application Support/Lumo`.
 

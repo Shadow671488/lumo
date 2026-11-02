@@ -276,8 +276,7 @@ function initUpdater(getWindow) {
         }).catch(() => {});
       }
     } else {
-      app.relaunch();
-      app.exit(0);
+      shell.openExternal((current && current.htmlUrl) || releasesUrl);
     }
   };
 

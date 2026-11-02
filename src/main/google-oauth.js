@@ -2,7 +2,7 @@
 
 const crypto = require('crypto');
 
-const GOOGLE_CLIENT_ID = '609299142801-2vntt75stemhvb637j3abtm6qigcp2gl.apps.googleusercontent.com';
+const GOOGLE_CLIENT_ID = '171523925886-acon5eeqsfuffmjpfvp315ev7d96s2pj.apps.googleusercontent.com';
 const GOOGLE_SCOPES = [
   'https://www.googleapis.com/auth/youtube.readonly'
 ];

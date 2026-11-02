@@ -29,7 +29,7 @@ let reconnectTimer = null;
 let isDestroying = false;
 
 function initRPC() {
-  if (!RPC || rpcClient || isDestroying) return;
+  if (rpcClient || isDestroying) return;
 
   try {
     rpcClient = new RPC.Client({ transport: 'ipc' });

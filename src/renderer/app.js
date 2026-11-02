@@ -1036,7 +1036,15 @@ document.addEventListener('DOMContentLoaded', async () => {
             if (resp.ok) {
               const list = await resp.json();
               if (Array.isArray(list) && list.length > 0) {
-                const found = list.find(item => item && item.videoId);
+                const expectedDur = Number(track?.duration || 0);
+                const found = list.find(item => {
+                  if (!item || !item.videoId) return false;
+                  if (expectedDur > 15 && item.lengthSeconds > 0) {
+                    const diff = Math.abs(item.lengthSeconds - expectedDur);
+                    if (diff > 25 && diff / expectedDur > 0.25) return false;
+                  }
+                  return true;
+                }) || list.find(item => item && item.videoId);
                 if (found && found.videoId) {
                   cleanId = found.videoId;
                   break;
@@ -4213,9 +4221,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     try {
       el.nativeAudio.pause();
-      el.nativeAudio.removeAttribute('src');
-      el.nativeAudio.load();
     } catch (e) {}
+    state._userPausedDuringLoad = false;
 
     if (hlsInstance) {
       try { hlsInstance.destroy(); } catch (e) {}
@@ -4411,7 +4418,15 @@ document.addEventListener('DOMContentLoaded', async () => {
           try {
             const searchRes = await fetch(`http://127.0.0.1:${state.serverPort}/api/search?q=${encodeURIComponent(fallbackQuery)}&platform=youtube&limit=5`, { signal });
             const searchData = await searchRes.json();
-            const candidates = Array.isArray(searchData.tracks) ? searchData.tracks.slice(0, 3) : [];
+            const expectedDur = Number(track.duration || 0);
+            const candidates = (Array.isArray(searchData.tracks) ? searchData.tracks : []).filter(c => {
+              if (!c) return false;
+              if (expectedDur > 15 && c.duration > 0) {
+                const diff = Math.abs(c.duration - expectedDur);
+                if (diff > 25 && diff / expectedDur > 0.25) return false;
+              }
+              return true;
+            }).slice(0, 3);
             for (const candidate of candidates) {
               const fallbackUrl = candidate.url || (candidate.id ? `https://www.youtube.com/watch?v=${encodeURIComponent(candidate.id)}` : '');
               if (!fallbackUrl) continue;
@@ -4465,7 +4480,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         hlsInstance.attachMedia(el.nativeAudio);
         hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
           if (currentToken === state.loadToken) {
-            if (state.isPlaying && !state._userPausedDuringLoad) {
+            if (!state._userPausedDuringLoad) {
               playSmooth();
             } else {
               updatePlayPauseButton(false, false);
@@ -4474,7 +4489,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         });
       } else {
         el.nativeAudio.src = data.streamUrl;
-        if (state.isPlaying && !state._userPausedDuringLoad) {
+        if (!state._userPausedDuringLoad) {
           playSmooth();
         } else {
           updatePlayPauseButton(false, false);
@@ -7946,6 +7961,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
 
     el.nativeAudio.addEventListener('error', () => {
+      if (state.isTrackLoading || !el.nativeAudio.src || el.nativeAudio.networkState === HTMLMediaElement.NETWORK_EMPTY) return;
       if (state.playbackLoadTimeout) { clearTimeout(state.playbackLoadTimeout); state.playbackLoadTimeout = null; }
       if (el.trackLoadingOverlay) el.trackLoadingOverlay.classList.add('hidden');
       state.isPlaying = false;
@@ -7976,7 +7992,15 @@ document.addEventListener('DOMContentLoaded', async () => {
               if (loadToken !== state.loadToken || signal?.aborted) return;
               const searchRes = await fetch(`http://127.0.0.1:${state.serverPort}/api/search?q=${encodeURIComponent(query)}&platform=youtube&limit=5`, { signal });
               const searchData = await searchRes.json();
-              const candidates = Array.isArray(searchData.tracks) ? searchData.tracks.slice(0, 3) : [];
+              const expectedDur = Number(track.duration || 0);
+              const candidates = (Array.isArray(searchData.tracks) ? searchData.tracks : []).filter(c => {
+                if (!c) return false;
+                if (expectedDur > 15 && c.duration > 0) {
+                  const diff = Math.abs(c.duration - expectedDur);
+                  if (diff > 25 && diff / expectedDur > 0.25) return false;
+                }
+                return true;
+              }).slice(0, 3);
               for (const candidate of candidates) {
                 if (loadToken !== state.loadToken || signal?.aborted) return;
                 const fallbackUrl = candidate.url || (candidate.id ? `https://www.youtube.com/watch?v=${encodeURIComponent(candidate.id)}` : '');
@@ -7997,7 +8021,7 @@ document.addEventListener('DOMContentLoaded', async () => {
                   hlsInstance.attachMedia(el.nativeAudio);
                   hlsInstance.on(Hls.Events.MANIFEST_PARSED, () => {
                     if (loadToken === state.loadToken) {
-                      if (state.isPlaying && !state._userPausedDuringLoad) {
+                      if (!state._userPausedDuringLoad) {
                         playSmooth();
                       } else {
                         updatePlayPauseButton(false, false);
@@ -8154,6 +8178,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     el.nativeAudio.addEventListener('ended', () => {
+      if (state.isTrackLoading || !el.nativeAudio.src || el.nativeAudio.networkState === HTMLMediaElement.NETWORK_EMPTY) return;
+      if (el.nativeAudio.currentTime < 1) return;
       updatePlayPauseButton(false, false);
       if (state.sleepTimer && state.sleepTimer.mode === 'end') {
         state.sleepTimer = null;

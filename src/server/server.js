@@ -249,9 +249,7 @@ async function findCachedFile(trackId, title = '', artist = '') {
       const filePath = path.join(CACHE_DIR, `${cleanId}${ext}`);
       try {
         const stat = await fs.promises.stat(filePath);
-        const expDur = typeof expectedDuration === 'number' ? expectedDuration : parseInt(expectedDuration || '0', 10);
-        const minSize = (expDur && expDur > 45) ? Math.min(850000, expDur * 12000) : 850000;
-        if (stat.size < minSize) {
+        if (stat.size < 20480) {
           try { await fs.promises.unlink(filePath); } catch (_) {}
           continue;
         }
@@ -2470,23 +2468,77 @@ async function handleStreamInfo(req, res, trackUrl, trackId, platform = 'youtube
       }
     }
 
+    // Fallback: search with candidate duration and title verification to avoid random songs
     if (!streamUrl && (title || artist)) {
-      const q = (artist && title) ? (artist + " - " + title) : (title || artist);
-      const isSearchSc = isSc && !trackUrl;
-      const fbSpec = isSearchSc ? ("scsearch1:" + q) : ("ytsearch1:" + q + " audio");
-      try {
-        const fbArgs = [
-          "--no-config", "-g", "--no-warnings", "--no-playlist", "--no-check-certificates", "--prefer-free-formats",
-          "--socket-timeout", "5", "--retries", "1",
-          ...(!isSearchSc ? ["--extractor-args", "youtube:player_client=android"] : []),
-          "-f", (isSearchSc ? audioFormat : "bestaudio/best/18"),
-          fbSpec
-        ];
-        const fbRaw = await executeYtDlp(fbArgs, 7000);
-        const lines = fbRaw.trim().split(String.fromCharCode(10)).map(l => l.trim()).filter(l => l.startsWith("http"));
-        const nonDrm = lines.find(l => !/preview|drm/i.test(l)) || lines[0];
-        if (nonDrm) streamUrl = nonDrm;
-      } catch (e) {}
+      const searchQueries = [
+        `${artist || ''} ${title || ''}`.trim(),
+        `${title || ''} ${artist || ''}`.trim()
+      ].filter(Boolean);
+
+      const titleKeywords = (title || '')
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+        .split(/\s+/)
+        .filter(w => w.length >= 3 && !/^(feat|prod|official|video|audio|lyrics|track|topic)$/i.test(w));
+
+      for (const q of searchQueries) {
+        if (streamUrl) break;
+        for (const ytClient of ['android', 'web_safari']) {
+          if (streamUrl) break;
+          try {
+            const ytArgs = [
+              '--no-config', '--no-warnings', '--no-playlist', '--no-check-certificates', '--prefer-free-formats',
+              '--socket-timeout', '5', '--retries', '1',
+              ...(ytClient ? ['--extractor-args', `youtube:player_client=${ytClient}`] : []),
+              '-f', (forShare ? audioFormat : 'bestaudio/best/18'),
+              '--print', '%(id)s\t%(duration)s\t%(title)s\t%(url)s',
+              `ytsearch5:${q}`
+            ];
+            const rawOutput = await executeYtDlp(ytArgs, 12000);
+            const lines = rawOutput.trim().split(String.fromCharCode(10)).map(l => l.trim()).filter(Boolean);
+            const candidates = [];
+            for (const line of lines) {
+              const parts = line.split('\t');
+              if (parts.length >= 4) {
+                const cId = parts[0];
+                const cDur = parseFloat(parts[1] || '0');
+                const cTitle = parts[2];
+                const cUrl = parts.slice(3).join('\t').trim();
+                if (cUrl && cUrl.startsWith('http')) {
+                  candidates.push({ id: cId, duration: cDur, title: cTitle, url: cUrl });
+                }
+              }
+            }
+
+            if (candidates.length > 0) {
+              let bestMatch = null;
+              let bestDiff = Infinity;
+              for (const c of candidates) {
+                const cTitleLower = (c.title || '').toLowerCase();
+                const hasKeyword = titleKeywords.length === 0 || titleKeywords.some(k => cTitleLower.includes(k));
+                if (!hasKeyword && titleKeywords.length > 0) continue;
+
+                if (durationNum > 15) {
+                  const diff = Math.abs(c.duration - durationNum);
+                  if (diff <= 25 || (diff / durationNum) <= 0.25) {
+                    if (diff < bestDiff) {
+                      bestDiff = diff;
+                      bestMatch = c;
+                    }
+                  }
+                } else {
+                  bestMatch = c;
+                  break;
+                }
+              }
+              if (bestMatch && bestMatch.url) {
+                streamUrl = bestMatch.url;
+                break;
+              }
+            }
+          } catch (_) {}
+        }
+      }
     }
 
     if (!streamUrl && isYt && (cleanId || trackUrl)) {
@@ -2495,27 +2547,6 @@ async function handleStreamInfo(req, res, trackUrl, trackId, platform = 'youtube
     if (!streamUrl) {
       const q = ((artist ? artist + ' - ' : '') + (title || '')).trim();
       streamUrl = await fetchDirectSoundCloudStreamServer(isSc ? (trackUrl || cleanId) : '', q);
-    }
-
-    if (!streamUrl && (title || artist)) {
-      const q = (artist && title) ? (artist + ' - ' + title) : (title || artist);
-      for (const ytClient of ['android', 'web_safari', 'tv']) {
-        try {
-          const ytArgs = [
-            '--no-config', '-g', '--no-warnings', '--no-playlist', '--no-check-certificates', '--prefer-free-formats',
-            '--socket-timeout', '5', '--retries', '1',
-            ...(ytClient ? ['--extractor-args', `youtube:player_client=${ytClient}`] : []),
-            '-f', 'bestaudio/best/18',
-            `ytsearch1:${q} audio`
-          ];
-          const ytRaw = await executeYtDlp(ytArgs, 7000);
-          const lines = ytRaw.trim().split(String.fromCharCode(10)).map(l => l.trim()).filter(l => l.startsWith('http'));
-          if (lines.length > 0) {
-            streamUrl = lines[0];
-            break;
-          }
-        } catch (_) {}
-      }
     }
 
     if (forShare && (!streamUrl || streamUrl.includes('.m3u8')) && (title || artist)) {

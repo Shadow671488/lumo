@@ -7,6 +7,9 @@ echo                    Lumo Launcher
 echo ===================================================
 echo.
 
+taskkill /f /im Lumo.exe >nul 2>nul
+taskkill /f /im electron.exe >nul 2>nul
+
 where node >nul 2>nul
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] Node.js is not found in PATH!

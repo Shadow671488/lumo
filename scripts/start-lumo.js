@@ -1,7 +1,28 @@
 'use strict';
 
 process.noDeprecation = true;
-process.env.NODE_OPTIONS = ((process.env.NODE_OPTIONS || '') + ' --no-deprecation').trim();
+if (process.env.NODE_OPTIONS) {
+  const cleaned = process.env.NODE_OPTIONS.replace(/--no-deprecation\b/g, '').trim();
+  if (cleaned) {
+    process.env.NODE_OPTIONS = cleaned;
+  } else {
+    delete process.env.NODE_OPTIONS;
+  }
+} else {
+  delete process.env.NODE_OPTIONS;
+}
+
+// Clean up any hung or orphaned Lumo processes to avoid lockfile sharing violations (Error code 32)
+if (process.platform === 'win32') {
+  try {
+    const { execSync } = require('child_process');
+    execSync('taskkill /f /im Lumo.exe 2>nul & taskkill /f /im electron.exe 2>nul', {
+      stdio: 'ignore',
+      shell: 'cmd.exe',
+      windowsHide: true
+    });
+  } catch (_) {}
+}
 
 // Launches the app through Lumo.exe on Windows so Task Manager and the Windows
 // Volume Mixer show "Lumo" (and its icon) instead of "Electron". Falls back to

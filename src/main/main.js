@@ -434,7 +434,9 @@ function runGUI() {
       mainWindow.maximize();
     }
 
+    const showFallbackTimer = setTimeout(() => { if (mainWindow && !mainWindow.isDestroyed() && !mainWindow.isVisible()) mainWindow.show(); }, 2500);
     mainWindow.once('ready-to-show', () => {
+      clearTimeout(showFallbackTimer);
       if (!mainWindow || mainWindow.isDestroyed()) return;
       mainWindow.show();
     });
